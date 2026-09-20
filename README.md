@@ -385,3 +385,28 @@ reports/                 soak report, cut log and recording summary from this Ma
 data/                    roster, photos, script, camera config, recordings/, reports/ (created at runtime)
 models/                  face_detection_yunet_2023mar.onnx, face_recognition_sface_2021dec.onnx
 ```
+
+## Desk UI (hemadassani/cue-desk-ui) at `/desk`
+
+`server/desk_ws.py` serves `server/static/desk.html`, a copy of the
+[cue-desk-ui](https://github.com/hemadassani/cue-desk-ui) page, and speaks its
+WebSocket contract at `/ws`: `source`, `directing`, `caption_status`,
+`deepgram_config`, `roster`, `mode`, `caption_provisional`, `caption_final`,
+`deepgram_result`, `decision` (DecisionRecord), `camera_state`, `prepare`,
+`stand_down`; from the desk `manual_take`, `set_mode`, `accept_suggestion`,
+`skip_suggestion`, `rate`. The page's camera tiles are canvases painted from the
+same binary frames the `/ui` page gets (iPhone cameras through `/ingest`), with
+the camera id rewritten to `CAM-HOST` / `CAM-GUEST` / `CAM-WIDE` by role. Like
+`/ui`, neither `/desk` nor `/ws` exists through the public tunnel host.
+
+Open `http://127.0.0.1:8000/desk` on the director Mac. When the director's
+snapshot carries `assist` and `suggestion`, the desk's assist, accept and skip
+map to the director's `assist`, `accept` and `skip` controls and a suggestion
+shows as the desk's suggestion card; with an older director, assist falls back
+to HOLD and the desk is told. Limits, stated on purpose: no Deepgram
+first-word latency is measured, so that row stays empty; decisions are read
+from the ~4 Hz state snapshot, so two decisions inside one tick show as the
+later one.
+
+The `/ui` protocol is unchanged; the adapter subscribes to the same fan-out.
+Tests: `tests/test_desk_ws.py`.

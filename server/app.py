@@ -41,6 +41,7 @@ from .planner import Proposal, plan
 from .worldstate import WorldState
 from .recorder import Recorder, list_recordings
 from .semantics import Action, Cue, LLMParser, Person, Roster, Semantics, validate
+from .desk_ws import install as install_desk  # desk UI adapter (/desk, /ws); additive
 
 APP_VERSION = "0.2.0"
 log = logging.getLogger("cue.app")
@@ -1520,6 +1521,9 @@ async def ws_ui(ws: WebSocket) -> None:
         client.wake.set()
         sender.cancel()
         show.ui_clients.discard(client)
+
+
+install_desk(app, show, settings.static_dir, _is_public_host)  # hemadassani/cue-desk-ui at /desk over /ws
 
 
 def main() -> None:
