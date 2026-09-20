@@ -35,8 +35,12 @@ from .config import Settings, load_settings
 from .identity import (FaceEngine, Gallery, IdentityWorker, PresenceTracker, enroll_people, ensure_decodable,
                        models_present, reference_thumbnail)
 from .bridge import TeamControlBridge, parse_camera_map
+from .dialogue import DialogueAnalyzer
+from .observers import CameraObserver
+from .planner import Proposal, plan
+from .worldstate import WorldState
 from .recorder import Recorder, list_recordings
-from .semantics import Action, Cue, LLMParser, Person, Roster, Semantics
+from .semantics import Action, Cue, LLMParser, Person, Roster, Semantics, validate
 
 APP_VERSION = "0.2.0"
 log = logging.getLogger("cue.app")
@@ -222,6 +226,15 @@ class Show:
         self.recordings_count = 0
         self.pending_block: str | None = None   # why the pending cue waits: "min-shot" | "identity"
         self.join_code: str = ""
+        # context-aware director (spec): world state, per-camera observers, dialogue analyzer, planner
+        self.ws = WorldState()
+        self.observers: dict[str, CameraObserver] = {}
+        self.dialogue: DialogueAnalyzer | None = None
+        self.last_proposal: Proposal | None = None
+        self.suggestion: dict | None = None
+        self.assist_mode = False
+        self.planner_cuts = 0
+        self.planner_holds = 0
         self.latest_seq = 0                     # newest clause seen by the director
         self._loop_thread: threading.Thread | None = None
         self.dirty = asyncio.Event()
@@ -344,6 +357,9 @@ class Show:
             log.warning("No OPENAI_API_KEY and no CUE_LLM_BASE_URL: rule-based interpreter only (no LLM, no VLM).")
         self.semantics = Semantics(self.roster, self.script_text, self.on_cue, llm=llm, fast_path=self.s.fast_path,
                                    stale_after_s=self.s.cue_lifetime_s)
+        self.dialogue = DialogueAnalyzer(self.roster, llm._client if (llm is not None and getattr(llm, "local", False)) else None,
+                                         self.s.llm_model, timeout_s=max(2.0, self.s.llm_timeout_s))
+        self.ws.host_id = self.roster.host_id
         if self.s.has_openai and self.s.vlm_enabled:  # the vision fallback needs OpenAI; local text models run without it
             try:
                 from .vlm import VLMIdentifier
@@ -361,6 +377,9 @@ class Show:
     def refresh_context(self) -> None:
         if self.semantics:
             self.semantics.set_context(self.roster, self.script_text)
+        if self.dialogue:
+            self.dialogue.set_roster(self.roster)
+        self.ws.host_id = self.roster.host_id
         self.reenroll()
         if self.speech is not None and self.loop is not None:
             self.loop.call_soon_threadsafe(self.speech.reconnect)  # new roster -> new Deepgram key terms
@@ -404,9 +423,18 @@ class Show:
         with self._lock:
             return {cid: (c.seq, c.latest) for cid, c in self.cameras.items() if c.latest is not None}
 
-    def _identity_update_from_thread(self, cam_id: str, obs, img) -> None:
+    def _identity_update_from_thread(self, cam_id: str, obs, img, faces=None) -> None:
         if self.loop is None:
             return
+        if img is not None and faces is not None:
+            try:  # fast visual loop: tracks, mouth motion, yaw, motion, freshness -> world state
+                observer = self.observers.get(cam_id)
+                if observer is None:
+                    observer = self.observers[cam_id] = CameraObserver(cam_id)
+                matches = [(o.person_id, o.similarity) for o in obs]
+                self.ws.update_camera(observer.observe(img, faces, matches, time.monotonic()))
+            except Exception as e:
+                log.debug("observer %s failed: %s", cam_id, e)
         unknown = any(o.decision in ("UNKNOWN", "AMBIGUOUS", "TOO_SMALL") for o in obs)
         self.loop.call_soon_threadsafe(self._identity_updated, cam_id, unknown)
 
@@ -452,6 +480,8 @@ class Show:
             self.log_event("clause", ev.text, utterance_id=ev.utterance_id)
             await self.semantics.handle_clause(ev.text, ev.utterance_id, ev.utterance_text, meta.get("recv_mono", time.monotonic()),
                                                {"speech_end_mono": meta.get("speech_end_mono"), "source": meta.get("source", "mic")})
+            if self.dialogue is not None:
+                asyncio.ensure_future(self._analyze_dialogue(ev.text, ev.utterance_text))
         elif isinstance(ev, UtteranceEnd):
             self._upsert_transcript(ev.utterance_id, ev.text, final=True, source=meta.get("source", "mic"))
             self.interim = None
@@ -485,6 +515,17 @@ class Show:
             ev = Clause(uid, i + 1, part, " ".join(so_far), None, None, i == len(parts) - 1)
             await self.on_speech_event(ev, {"recv_mono": now, "recv_wall": time.time(), "source": source, "speech_end_mono": now})
         await self.on_speech_event(UtteranceEnd(uid, text), {"source": source})
+
+    async def _analyze_dialogue(self, text: str, utterance_text: str) -> None:
+        try:
+            rc = validate(self.semantics.rules.parse(text, utterance_text), self.roster)
+            prev = self.ws.conv.current_speaker
+            res = await self.dialogue.analyze(text, rc, prev)
+            res["updated_at"] = time.monotonic()
+            self.ws.update_conv(**res)
+            self.log_event("context", f"{res['dialogue_act']} addressed={res['addressed']} next={res['expected_next']} subject={res['subject']} salience={res['salience']:.1f}{' backchannel' if res['backchannel'] else ''} ({res['source']})")
+        except Exception as e:
+            log.debug("dialogue analysis failed: %s", e)
 
     # ------------------------------------------------------------- directing
     async def on_cue(self, cue: Cue) -> None:
@@ -529,11 +570,22 @@ class Show:
         prev = self.last_decision
         self.last_decision = decision
         self.decision_ver += 1
+        safety = why in ("live camera unhealthy", "first healthy camera") or "unhealthy" in decision.reason
+        if decision.action == D.Take.TAKE and self.assist_mode and not safety and decision.camera_id != self.state.current_camera:
+            # ASSIST: an explicit cue becomes a suggestion with its evidence; the operator takes it
+            self.suggestion = {"camera_id": decision.camera_id, "confidence": 0.85, "reason_codes": ["CUE_" + (decision.evidence or "take").upper()],
+                               "explanation": decision.reason, "origin": "cue", "at_wall": time.time(), "state_version": self.ws.version}
+            self.log_event("suggest", f"ASSIST: cue suggests {decision.camera_id} ({decision.reason})")
+            self.pending_cue = None
+            self.pending_block = None
+            self.mark_dirty()
+            return decision
         changed = D.apply(self.state, decision, cue, now)
         same_as_before = prev is not None and prev.action == decision.action and prev.camera_id == decision.camera_id and prev.reason == decision.reason
         if decision.action == D.Take.TAKE and changed:
             self.cuts += 1
             self.program_since_wall = time.time()
+            self.ws.record_cut(decision.camera_id, now, ["CUE_" + (decision.evidence or "take").upper()], "cue" if cue is not None else "safety")
             if cue is not None:
                 self.lat_clause_to_cut.append((now - cue.created_at) * 1000)
                 self.lat_clause_to_cut = self.lat_clause_to_cut[-200:]
@@ -618,8 +670,26 @@ class Show:
         elif action == "auto":
             self.state.mode = D.Mode.AUTO
             self.state.hold_until = None
-            self.log_event("manual", "AUTO resumed")
+            self.assist_mode = False
+            self.suggestion = None
+            self.log_event("manual", "AUTO resumed: the director executes")
             self._mirror_mode(False)
+        elif action == "assist":
+            self.state.mode = D.Mode.AUTO
+            self.state.hold_until = None
+            self.assist_mode = True
+            self.log_event("manual", "ASSIST: the director suggests, the operator takes")
+            self._mirror_mode(False)
+        elif action == "accept":
+            sug = self.suggestion
+            if not sug:
+                raise HTTPException(400, "no suggestion to accept")
+            self.suggestion = None
+            return self.control("take", sug["camera_id"])
+        elif action == "skip":
+            if self.suggestion:
+                self.log_event("suggest", f"skipped suggestion {self.suggestion['camera_id']}")
+            self.suggestion = None
         elif action in ("take", "wide", "host"):
             if action == "wide":
                 camera_id = next((cid for cid, c in self.cameras.items() if c.role == "wide"), camera_id)
@@ -633,9 +703,11 @@ class Show:
                 return {"ok": True, "program": camera_id, "mode": self.state.mode.value, "note": "already live"}
             D.manual_take(self.state, camera_id, now)
             self.pending_cue = None
+            self.suggestion = None
             self.program_since_wall = time.time()
             self.last_decision = D.Decision(D.Take.TAKE, camera_id, "manual take", "manual")
             self.cuts += 1
+            self.ws.record_cut(camera_id, now, ["MANUAL_TAKE"], "manual")
             self.log_event("manual", f"TAKE {camera_id}")
             if self.recorder is not None:
                 self.recorder.log_cut(camera_id, "manual", "manual take", None, None)
@@ -650,6 +722,67 @@ class Show:
             raise HTTPException(400, "unknown action")
         self.mark_dirty()
         return {"ok": True, "program": self.state.current_camera, "mode": self.state.mode.value}
+
+    # ------------------------------------------------- context-aware director loop
+    def _sync_world(self, now: float) -> None:
+        roles = {cid: c.role for cid, c in self.cameras.items()}
+        healthy = {cid: c.healthy(now, self.s.camera_stale_s) for cid, c in self.cameras.items()}
+        fixed = {cid: c.fixed_person for cid, c in self.cameras.items()}
+        self.ws.update_health(roles, healthy, fixed)
+        self.ws.set_mode("HOLD" if self.state.mode == D.Mode.HOLD else ("ASSIST" if self.assist_mode else "AUTO"), self.state.mode == D.Mode.HOLD)
+        if self.mic is not None:
+            self.ws.update_audio(self.mic.level, now)
+        # who is speaking: master audio + mouth motion on a camera; without a visual match the host's mic implies the host
+        cam, conf = self.ws.speaking_camera(now)
+        conv = self.ws.conv
+        if cam:
+            obs = self.ws.cameras.get(cam)
+            p = max(obs.people, key=lambda x: x.speaking) if obs and obs.people else None
+            who = p.person_id if p and p.person_id else (("host" if self.cameras[cam].role == "host" else None) if cam in self.cameras else None)
+            if who:
+                self.ws.update_conv(current_speaker=who, speaker_conf=conf)
+        elif self.ws.speech_active and self.ws.speech_since and now - self.ws.speech_since > 1.0 and conv.speaker_conf < 0.5:
+            self.ws.update_conv(current_speaker="host", speaker_conf=0.4)
+        if self.ws.shot is None and self.state.current_camera:
+            self.ws.record_cut(self.state.current_camera, self.state.last_cut_time if self.state.last_cut_time > 0 else now, ["INITIAL"], "cue")
+        elif self.ws.shot is not None and self.ws.shot.cam_id != self.state.current_camera:
+            self.ws.record_cut(self.state.current_camera, now, ["SYNC"], "cue")
+
+    async def director_loop(self) -> None:
+        """Spec §4 director loop, ~3 Hz: score candidates from the world state; cut in AUTO, suggest in ASSIST."""
+        while True:
+            await asyncio.sleep(0.33)
+            try:
+                now = time.monotonic()
+                self._sync_world(now)
+                cue = self.last_cue if (self.last_cue and self.last_cue.action in (Action.SHOW, Action.HOST, Action.WIDE)) else None
+                cue_age = (now - self.last_cue.created_at) if cue else 99.0
+                prop = plan(self.ws, now, cue, cue_age)
+                self.last_proposal = prop
+                if prop.decision == "CUT_TO_CAMERA" and prop.camera_id and prop.state_version == self.ws.version:
+                    if prop.camera_id != self.state.current_camera and self.state.mode != D.Mode.HOLD:
+                        D.manual_take(self.state, prop.camera_id, now)
+                        self.state.last_cut_utterance_id = ""
+                        self.pending_cue = None
+                        self.program_since_wall = time.time()
+                        self.last_decision = D.Decision(D.Take.TAKE, prop.camera_id, prop.explanation, "context")
+                        self.cuts += 1
+                        self.planner_cuts += 1
+                        self.ws.record_cut(prop.camera_id, now, prop.reason_codes, "planner")
+                        self.log_event("cut", f"TAKE {prop.camera_id} [context] {', '.join(prop.reason_codes[:4])} ({prop.confidence:.2f})")
+                        if self.recorder is not None:
+                            self.recorder.log_cut(prop.camera_id, "context", prop.explanation, None, None)
+                        self._mirror_take(prop.camera_id, "context", prop.explanation)
+                elif prop.decision == "SUGGEST_CAMERA" and prop.camera_id and prop.camera_id != self.state.current_camera:
+                    if not self.suggestion or self.suggestion.get("camera_id") != prop.camera_id:
+                        self.suggestion = {"camera_id": prop.camera_id, "confidence": prop.confidence, "reason_codes": prop.reason_codes,
+                                           "explanation": prop.explanation, "origin": "planner", "at_wall": time.time(), "state_version": prop.state_version}
+                        self.log_event("suggest", f"ASSIST: {prop.camera_id} ({prop.confidence:.2f}) {', '.join(prop.reason_codes[:3])}")
+                elif prop.decision == "HOLD_CURRENT" and self.suggestion and self.suggestion.get("origin") == "planner" and time.time() - self.suggestion["at_wall"] > 8:
+                    self.suggestion = None   # the moment passed
+                self.mark_dirty()
+            except Exception as e:
+                log.warning("director loop tick failed: %s", e)
 
     # ---------------------------------------------------------- team bridge
     def _mirror_take(self, camera_id: str, evidence: str, reason: str) -> None:
@@ -811,6 +944,11 @@ class Show:
                 "identity": {"models_present": self.engine is not None, "gallery_size": self.gallery.size,
                              "max_age_s": self.tun.identity_max_age_s, "accept": self.gallery.accept},
             },
+            "assist": self.assist_mode,
+            "world": self.ws.snapshot(now),
+            "proposal": self.last_proposal.to_json() if self.last_proposal else None,
+            "suggestion": self.suggestion,
+            "planner": {"cuts": self.planner_cuts, "dialogue_llm_calls": self.dialogue.stats["llm_calls"] if self.dialogue else 0},
             "bridge": ({"configured": True, "api": self.s.team_api, "event_id": self.s.team_event_id, "camera_map": self.bridge.camera_map,
                         "resume_mode": self.bridge.resume_mode, **self.bridge.stats}
                        if self.bridge else {"configured": False}),
@@ -914,7 +1052,7 @@ async def _startup() -> None:
         if not task.cancelled() and task.exception() is not None:
             log.error("background task %s died: %r", task.get_name(), task.exception())
 
-    for coro, name in ((show.ui_broadcaster(), "ui_broadcaster"), (show.health_watch(), "health_watch")):
+    for coro, name in ((show.ui_broadcaster(), "ui_broadcaster"), (show.health_watch(), "health_watch"), (show.director_loop(), "director_loop")):
         t = asyncio.create_task(coro, name=name)
         t.add_done_callback(_watch)
     await show.start_speech()
@@ -1215,7 +1353,7 @@ async def api_set_cameras(body: dict) -> dict:
         cam = show.cameras.get(cid) or Camera(cid, f"Camera {cid}")
         cam.label = str(cfg.get("label") or cam.label)
         role = str(cfg.get("role") or "guest").lower()
-        cam.role = role if role in ("wide", "host", "guest") else "guest"
+        cam.role = role if role in ("wide", "host", "guest", "audience", "demo") else "guest"
         fp = cfg.get("fixed_person") or None
         cam.fixed_person = fp if fp in show.roster.ids else None
         with show._lock:

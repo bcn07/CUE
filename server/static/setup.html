@@ -128,7 +128,7 @@
     $('cams').innerHTML = Object.entries(cams).map(([cid, c]) => `<tr data-cid="${esc(cid)}">
       <td><b>${esc(cid)}</b></td>
       <td><input type="text" class="label" value="${esc(c.label)}"></td>
-      <td><select class="role">${['wide', 'host', 'guest'].map((r) => `<option ${c.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+      <td><select class="role">${['wide', 'host', 'guest', 'audience', 'demo'].map((r) => `<option ${c.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
       <td><select class="fixed"><option value="">— none (identity only) —</option>${people.map((p) => `<option value="${esc(p.id)}" ${c.fixed_person === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
       <td class="status">${statusHtml(c)}</td>
       <td><button class="small" data-rm="${esc(cid)}">×</button></td></tr>`).join('');

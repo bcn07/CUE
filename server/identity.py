@@ -288,7 +288,7 @@ class IdentityWorker(threading.Thread):
 
     def __init__(self, engine: FaceEngine, gallery: Gallery, trackers: dict[str, PresenceTracker],
                  get_frames: FrameGetter, interval_s: float = 0.15, max_faces: int = 6,
-                 on_update: Callable[[str, list[Observation], np.ndarray | None], None] | None = None,
+                 on_update: Callable[..., None] | None = None,
                  tracker_factory: Callable[[], PresenceTracker] | None = None):
         super().__init__(daemon=True, name="cue-identity")
         self.engine, self.gallery, self.trackers = engine, gallery, trackers
@@ -347,4 +347,4 @@ class IdentityWorker(threading.Thread):
         self.stats["last_ms"] = round(ms, 1)
         self.stats["avg_ms"] = round(self.stats["avg_ms"] * 0.9 + ms * 0.1, 1)
         if self.on_update:
-            self.on_update(cam_id, obs, img)
+            self.on_update(cam_id, obs, img, faces)

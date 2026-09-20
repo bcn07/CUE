@@ -164,6 +164,54 @@ the page shows OFFLINE and reconnects when it returns).
   on stop. `CUE_AUTO_RECORD=1` starts recording at boot. Recordings are listed on the setup page and
   served under `/recordings/`; the REC pill warns when the mic has been silent.
 
+## The context-aware director (spec: `docs/CUE_CONTEXT_AWARE_DIRECTOR_SPEC.md`)
+
+Names are evidence, not commands. Since 2026-09-20 the one-shot keeps one evolving world state
+and a director loop scores every candidate shot from it, roughly 3 times a second, with reason
+codes you can read on the "Director reasoning" panel.
+
+- **World state** (`server/worldstate.py`): per camera, who is visible (tracks with identity when
+  confident), visual speech activity from mouth motion, head yaw, motion, frozen frames, sharpness,
+  shot type (close-up / medium / wide / group / empty / unusable), entrances and exits; the
+  conversation (current speaker, dialogue act, who is addressed even without a name, expected next
+  speaker, back-channel, salience, the visual subject: person / audience / screen / object,
+  transitions, overlap); master-audio activity; shot history and cut rate; mode and hold.
+- **Fast visual loop** (`server/observers.py`): computed inside the identity worker on the frames it
+  already decodes, ~7 Hz per camera, no extra model.
+- **Language loop** (`server/dialogue.py`): every finished clause is classified deterministically in
+  microseconds (back-channel, audience / screen / object subjects, questions and their addressee,
+  transitions, emotional salience) and refined by the local LLM when one is configured. The existing
+  who/intent/timing cue is one of its inputs; a person merely talked about becomes a *reference*,
+  never a visual owner.
+- **Planner** (`server/planner.py`): scores cue target visibility, addressee and expected speaker,
+  active speaker (audio fused with mouth motion), reaction windows, demonstrations, entrances,
+  transitions, overlap coverage, sharpness and composition, variety, continuity, sentence
+  continuation and emotional moments; subtracts staleness, rapid cuts and frozen frames. It returns
+  HOLD_CURRENT, CUT_TO_CAMERA, SUGGEST_CAMERA, USE_SAFETY_SHOT or WAIT_FOR_MORE_EVIDENCE with
+  alternatives and a state version; a cut only executes when the benefit beats the continuity cost,
+  the minimum shot has elapsed (1.5 s for reactions, 2.5 s otherwise), fewer than 3 cuts happened in
+  10 s, the candidate's observation is fresh, and the world has not moved since scoring.
+- **Modes**: AUTO executes; **ASSIST** turns every cut (explicit cue or planner) into a suggestion
+  card with reason codes that the operator takes with one click or Enter; HOLD blocks everything
+  but safety failover.
+- **Camera roles** now include `audience` and `demo`, so "a round of applause for everyone here"
+  goes to the audience camera (or the wide) and "here's how the prototype works" goes to the demo
+  camera (or the wide), not to whoever is talking.
+
+Spec scenarios covered by tests (`tests/test_planner.py`, `tests/test_dialogue.py`,
+`tests/test_observers.py`): name mentioned but speaker stays; directed question without a name;
+back-channel never cuts; emotional answer survives "mm-hmm"; overlap goes wide; camera failure to
+safety shot; operator hold and manual mode; ASSIST suggests; minimum shot and rapid-cut guards;
+applause to audience camera; demonstration to demo/wide; unknown identity falls back to wide;
+stale state version visible to the executor; reaction window is short. Verified live with fake
+cameras: an applause line cut to the wide on `SUBJECT_AUDIENCE`; in ASSIST an introduction became
+a suggestion that the accept action executed.
+
+Not built yet (spec phases C and D): the VLM semantic loop (a local `qwen2.5vl:3b` is downloaded
+for it; on this Mac it answers in several seconds, so it would run only on change events), gesture
+recognition, provisional shot plans, and calibration of the scores against operator corrections.
+Run in ASSIST until the AUTO gates in spec §10 have been exercised on the real setup.
+
 ## How a cut happens (and why it often does not)
 
 1. Deepgram finalises a clause (~300 ms after the host pauses). Every finished clause is acted on;
@@ -269,7 +317,7 @@ correctly. Not verified: a browser showing the team GUI cutting LiveKit video fr
 ## Test it without laptops, mic or keys
 
 ```bash
-.venv/bin/python -m pytest -q                       # 122 tests: assembler, rules, director, pending cues, identity, recorder, speech, team bridge, end-to-end
+.venv/bin/python -m pytest -q                       # 145 tests: assembler, rules, director, planner, dialogue, observers, pending cues, identity, recorder, speech, team bridge, end-to-end
 ./run_server.sh                                     # terminal 1
 .venv/bin/python tools/fake_camera.py --cam A --pattern                          # terminal 2
 .venv/bin/python tools/fake_camera.py --cam B --image tests/fixtures/obama2.jpg  # terminal 3
@@ -292,7 +340,7 @@ kills the live guest camera once and brings it back, samples the server's memory
 
 | what | result |
 |---|---|
-| unit + end-to-end tests | 122 passed (`.venv/bin/python -m pytest -q`): assembler, rule parser (incl. 40+ adversarial sentences from two review rounds), director, pending-cue semantics, identity, recorder (incl. mid-recording playability), Deepgram protocol against a fake server, end-to-end |
+| unit + end-to-end tests | 145 passed (`.venv/bin/python -m pytest -q`): assembler, rule parser (incl. 40+ adversarial sentences from two review rounds), director, pending-cue semantics, identity, recorder (incl. mid-recording playability), Deepgram protocol against a fake server, end-to-end |
 | live feed | this Mac's FaceTime camera via `camera/stream_camera.py`: 153 frames in 10 s at 15.0 fps, 2.4 Mbit/s, face detected, auto-took wide, SLATE on disconnect |
 | face identity | same person 0.74 cosine, different people 0.10–0.23; YuNet 640x360 ≈ 5 ms; decode+detect+embed ≈ 12 ms/frame avg |
 | 3-min soak (typed lines, rules only, recording on) | `reports/soak_2026-09-19_3min.md`, final build: 30/30 lines correct, 0 wrong cuts, 20/20 expected cuts reached, clause→program 1.2 ms p50 / 1.8 ms p95, identity 11.8 ms avg over 3545 frames, both people confirmed 0.21 s after the cameras appeared, failover after the live camera died 0.32 s, camera back + identity re-confirmed 0.32 s, cameras in 15/15/15 fps, UI relay out 15/15/15 fps, RSS 292 → 140 MB |
@@ -323,12 +371,16 @@ server/identity.py       YuNet + SFace enrolment, matching, per-camera presence 
 server/recorder.py       program video + continuous master audio + cuts.jsonl, ffmpeg mux
 server/vlm.py            optional vision-model fallback (rate-limited)
 server/bridge.py         mirrors cuts and HOLD/AUTO to the team backend's control plane (team GUI)
+server/worldstate.py     one evolving world state (cameras, conversation, audio, shot history)
+server/observers.py      fast visual loop: tracks, mouth motion, yaw, motion, frozen frames, shot type
+server/dialogue.py       dialogue act, addressee, subject, salience per clause (rules + local LLM)
+server/planner.py        editorial scorer with reason codes; HOLD / CUT / SUGGEST / SAFETY / WAIT
 server/speech.py         mic (sounddevice) -> Deepgram WebSocket -> clause assembler
 server/assembler.py      Deepgram messages -> clauses / utterance ids (pure)
 server/static/           index.html (director), setup.html, cam.html (browser camera fallback)
 camera/                  laptop script + bootstrap wrappers + its 2-line requirements
 tools/                   fake_camera.py, say.py, soak.py, smoke_keys.py
-tests/                   122 tests incl. end-to-end; fixtures are public-domain portraits
+tests/                   145 tests incl. end-to-end; fixtures are public-domain portraits
 reports/                 soak report, cut log and recording summary from this MacBook (2026-09-19)
 data/                    roster, photos, script, camera config, recordings/, reports/ (created at runtime)
 models/                  face_detection_yunet_2023mar.onnx, face_recognition_sface_2021dec.onnx

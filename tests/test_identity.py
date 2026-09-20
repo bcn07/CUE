@@ -96,7 +96,7 @@ def test_identity_worker_confirms_person_on_camera(engine, people_dir):
 
     trackers: dict[str, PresenceTracker] = {}
     updates = []
-    w = IdentityWorker(engine, g, trackers, frames, interval_s=0.05, on_update=lambda cam, obs, im: updates.append(cam),
+    w = IdentityWorker(engine, g, trackers, frames, interval_s=0.05, on_update=lambda cam, obs, im, faces=None: updates.append(cam),
                        tracker_factory=lambda: PresenceTracker(2, 1.5))
     w.start()
     deadline = time.time() + 5

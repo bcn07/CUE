@@ -72,7 +72,7 @@ def main() -> int:
         ws.send(json.dumps({"type": "hello", "cam": a.cam.upper(), "label": f"Fake {a.cam.upper()}"}))
         while t_end is None or time.time() < t_end:
             if a.pattern:
-                frame = np.zeros((a.height, a.width, 3), np.uint8)
+                frame = np.full((a.height, a.width, 3), 70, np.uint8)   # a lit room, not a black frame
                 x = int((time.time() * 120) % a.width)
                 cv2.rectangle(frame, (x, 40), (min(a.width, x + 80), 200), (0, 200, 255), -1)
                 cv2.putText(frame, f"FAKE {a.cam.upper()} {time.strftime('%H:%M:%S')}", (20, a.height - 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2)

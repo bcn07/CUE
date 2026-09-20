@@ -93,7 +93,7 @@
   .log .e{display:flex;gap:8px}
   .log .e .t{color:var(--dim);flex:none}
   .log .e .k{flex:none;width:64px;text-transform:uppercase;letter-spacing:.05em}
-  .log .cut .k{color:var(--accent)} .log .cue .k{color:var(--ok)} .log .clause .k{color:var(--blue)} .log .decision .k{color:var(--dim)} .log .manual .k{color:var(--warn)} .log .vlm .k{color:var(--purple)} .log .camera .k{color:#7f8c9a} .log .record .k{color:var(--accent)} .log .bridge .k{color:var(--blue)}
+  .log .cut .k{color:var(--accent)} .log .cue .k{color:var(--ok)} .log .clause .k{color:var(--blue)} .log .decision .k{color:var(--dim)} .log .manual .k{color:var(--warn)} .log .vlm .k{color:var(--purple)} .log .camera .k{color:#7f8c9a} .log .record .k{color:var(--accent)} .log .bridge .k{color:var(--blue)} .log .context .k{color:#7fd1c1} .log .suggest .k{color:var(--warn)}
   a{color:var(--blue)}
   .roster{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
   .roster .p{background:var(--panel2);border-radius:6px;padding:3px 8px}
@@ -133,6 +133,20 @@
       <h2>Meaning <span class="r" id="cueSrc"></span></h2>
       <div class="kv" id="cue"></div>
     </div>
+    <div class="card" id="suggestCard" style="display:none;border-color:var(--warn)">
+      <h2>Suggestion <span class="r" id="sugConf"></span></h2>
+      <div class="kv" id="suggestion"></div>
+      <div class="controls" style="margin-top:8px"><button class="primary" id="acceptBtn">TAKE suggestion</button><button id="skipBtn">skip</button></div>
+    </div>
+    <div class="card">
+      <h2>Director reasoning <span class="r" id="reasonVer"></span></h2>
+      <div class="kv" id="reasoning"></div>
+      <div class="hint" id="alts" style="font-family:var(--mono);font-size:11px;color:var(--dim);margin-top:6px"></div>
+    </div>
+    <div class="card">
+      <h2>Conversation state</h2>
+      <div class="kv" id="convo"></div>
+    </div>
     <div class="card">
       <h2>Decision <span class="r" id="decVer"></span></h2>
       <div class="kv" id="decision"></div>
@@ -145,6 +159,7 @@
       <h2>Controls <span class="r" id="modeLabel"></span></h2>
       <div class="controls" id="controls">
         <button data-a="auto" id="btnAuto">AUTO</button>
+        <button data-a="assist" id="btnAssist">ASSIST</button>
         <button data-a="hold" id="btnHold" class="hold">HOLD</button>
         <button data-a="wide">WIDE</button>
         <button data-a="host">HOST</button>
@@ -276,6 +291,13 @@
       const pills = Object.entries(present).map(([pid, v]) => `<span class="pill ${v.source === 'vlm' ? 'vlm' : ''}">${esc(nameOf(pid))} <small>${v.source === 'vlm' ? 'vlm' : Number(v.similarity).toFixed(2)} · ${esc(v.age_s)}s</small></span>`);
       const unk = (c.identity.faces || []).filter((f) => !f.person_id).length;
       if (unk) pills.push(`<span class="pill unk">${unk} unknown face${unk > 1 ? 's' : ''}</span>`);
+      const wc = s.world && s.world.cameras[cid];
+      if (wc) {
+        const talking = wc.people.filter((p) => p.speaking > 0.4);
+        if (talking.length) pills.push(`<span class="pill" style="background:rgba(78,161,255,.9);color:#041020">🗣 ${esc(talking.map((p) => p.person ? nameOf(p.person) : 'someone').join(', '))}</span>`);
+        if (wc.frozen) pills.push('<span class="pill" style="background:rgba(255,59,59,.9);color:#fff">FROZEN</span>');
+        pills.push(`<span class="pill unk">${esc(wc.shot_type.toLowerCase().replace(/_/g, ' '))}</span>`);
+      }
       el.querySelector('.who').innerHTML = pills.join('');
       const zl = el.querySelector('.zoomlbl'); const z = c.ptz ? c.ptz.zoom : 1;
       zl.style.display = z > 1.01 ? 'block' : 'none'; zl.textContent = `zoom ${z.toFixed(1)}x`;
@@ -319,9 +341,35 @@
       mid('identity', L.identity_ms),
       m('decide', L.decide_ms, 'ms', 'director, pure code'),
     ].join('');
-    $('modeLabel').textContent = `${s.mode} · ${s.counters.cuts} cuts · ${s.counters.holds} holds`;
-    $('btnAuto').classList.toggle('on', s.mode === 'AUTO');
+    const modeName = s.mode === 'HOLD' ? 'HOLD' : (s.assist ? 'ASSIST' : 'AUTO');
+    $('modeLabel').textContent = `${modeName} · ${s.counters.cuts} cuts · ${s.counters.holds} holds`;
+    $('btnAuto').classList.toggle('on', modeName === 'AUTO');
+    $('btnAssist').classList.toggle('on', modeName === 'ASSIST');
     $('btnHold').classList.toggle('on', s.mode === 'HOLD');
+    // suggestion (ASSIST) card
+    const sug = s.suggestion;
+    $('suggestCard').style.display = sug ? 'block' : 'none';
+    if (sug) {
+      $('sugConf').textContent = `${sug.origin} · ${Math.round(sug.confidence * 100)}%`;
+      $('suggestion').innerHTML = kv([['take', `<span class="act TAKE">${esc(sug.camera_id)}</span> ${esc(s.cameras[sug.camera_id]?.label || '')}`], ['why', esc(sug.reason_codes.join(', '))], ['detail', esc(sug.explanation || '')]]);
+    }
+    // director reasoning panel (spec §14)
+    const pr = s.proposal, wsn = s.world;
+    $('reasonVer').textContent = pr ? `state v${pr.state_version}` : '';
+    $('reasoning').innerHTML = pr ? kv([
+      ['on air', `${esc(prog || 'SLATE')} · held ${wsn && wsn.shot ? wsn.shot.for_s + ' s' : '–'}`],
+      ['decision', `<span class="act ${pr.decision === 'CUT_TO_CAMERA' ? 'TAKE' : (pr.decision === 'SUGGEST_CAMERA' ? 'WIDE' : 'STAY')}">${esc(pr.decision)}</span> ${esc(pr.camera_id || '')} · ${Math.round(pr.confidence * 100)}%`],
+      ['reasons', esc(pr.reason_codes.join(', '))], ['because', esc(pr.explanation || '')],
+      ['cuts/min', wsn ? esc(wsn.cuts_last_60s) : '–'],
+    ]) : '<span style="color:#93a1b1">waiting for the world state…</span>';
+    $('alts').textContent = pr ? 'alternatives: ' + pr.alternatives.slice(0, 4).map((a) => `${a.cameraId} ${a.score.toFixed(2)}`).join(' · ') : '';
+    const cv = wsn ? wsn.conversation : null;
+    $('convo').innerHTML = cv ? kv([
+      ['speaker', `${esc(cv.current_speaker ? nameOf(cv.current_speaker) : '–')} ${cv.speaker_conf ? '(' + Math.round(cv.speaker_conf * 100) + '%)' : ''} · audio ${wsn.audio.speech_active ? 'ON' : 'off'}`],
+      ['act', `${esc(cv.dialogue_act)}${cv.backchannel ? ' (back-channel)' : ''}${cv.transition ? ' · transition' : ''}${cv.overlap ? ' · overlap' : ''}`],
+      ['addressed', esc((cv.addressed || []).map(nameOf).join(', ') || '–') + (cv.expected_next ? ` → next ${esc(nameOf(cv.expected_next))}` : '')],
+      ['subject', esc(cv.subject || 'person')], ['salience', String(cv.salience)], ['clause', esc(cv.last_clause || '')],
+    ]) : '';
     $('btnRec').classList.toggle('on', !!rec.active);
     $('btnRec').textContent = rec.active ? '■ STOP REC' : '● REC';
     $('recNote').textContent = rec.active ? `recording ${Math.round(rec.elapsed_s || 0)}s → ${rec.dir || ''}${rec.mic_silent ? '  ·  the microphone is delivering silence: check macOS mic permission / input device' : ''}` : (rec.last ? `last recording: ${rec.last}` : 'REC records the program output + master audio + cut log under data/recordings/');
@@ -372,6 +420,8 @@
       send({ type: 'control', action: b.dataset.a });
     };
   });
+  $('acceptBtn').onclick = () => send({ type: 'control', action: 'accept' });
+  $('skipBtn').onclick = () => send({ type: 'control', action: 'skip' });
   $('sayBtn').onclick = () => { const v = $('sayInput').value.trim(); if (v) { send({ type: 'say', text: v }); $('sayInput').value = ''; } };
   $('sayInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sayBtn').onclick(); });
   document.addEventListener('keydown', (e) => {
@@ -379,6 +429,7 @@
     if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return;
     const k = e.key.toUpperCase();
     if (k === 'H') send({ type: 'control', action: state.snap?.mode === 'HOLD' ? 'auto' : 'hold' });
+    else if (k === 'ENTER' && state.snap?.suggestion) send({ type: 'control', action: 'accept' });
     else if (k === 'W') send({ type: 'control', action: 'wide' });
     else if (state.snap && state.snap.cameras[k]) send({ type: 'control', action: 'take', camera_id: k });
   });
