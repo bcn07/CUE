@@ -67,6 +67,16 @@ def camera_map(cameras: dict[str, dict], prev: dict[str, str] | None = None) -> 
     return out
 
 
+_TILE_ORDER = {"CAM-HOST": 0, "CAM-GUEST": 1, "CAM-WIDE": 2}
+
+
+def cameras_message(cmap: dict[str, str]) -> dict:
+    """The desk ids that exist right now, the desk's own three first. One-shot extension: the page
+    shows exactly these tiles, so a camera whose role changed or that was removed on /setup does not
+    leave a ghost tile, and Host/Guest/Wide are hidden while no camera has that role."""
+    return {"type": "cameras", "cameras": sorted(set(cmap.values()), key=lambda d: (_TILE_ORDER.get(d, 3), d))}
+
+
 def supports_assist(snapshot: dict | None) -> bool:
     """The director exposes ASSIST once its snapshot carries the `assist` flag."""
     return bool(snapshot) and "assist" in snapshot
@@ -397,6 +407,7 @@ class DeskClient:
         self.alive = True
         self.cmap: dict[str, str] = {}
         self.prev: dict | None = None
+        self.cams_sent: list[str] | None = None
 
     # Show.relay_frame calls this with the /ui binary payload.
     def offer(self, cam_id: str, payload: bytes) -> None:
@@ -410,10 +421,17 @@ class DeskClient:
         except json.JSONDecodeError:
             return
         self.cmap = camera_map(cur.get("cameras") or {}, prev=self.cmap)
+        self.announce_cameras()
         for msg in diff_messages(self.prev, cur, self.cmap):
             self.texts.append(json.dumps(msg))
         self.prev = cur
         self.wake.set()
+
+    def announce_cameras(self) -> None:
+        msg = cameras_message(self.cmap)
+        if msg["cameras"] != self.cams_sent:
+            self.cams_sent = msg["cameras"]
+            self.texts.append(json.dumps(msg))
 
     def queue(self, msg: dict) -> None:
         self.texts.append(json.dumps(msg))
@@ -455,6 +473,7 @@ def install(app: FastAPI, show: Any, static_dir: Path, is_public_host: Any) -> N
         snapshot = show.snapshot()
         client.cmap = camera_map(snapshot.get("cameras") or {})
         client.prev = snapshot
+        client.announce_cameras()
         for msg in on_connect_messages(snapshot, client.cmap):
             client.queue(msg)
         show.ui_clients.add(client)

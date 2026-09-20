@@ -240,7 +240,16 @@ body.manual .ctl.main .ic{background:var(--hold);color:#1c1300}
 <script>
 /* CUE desk v4. Server wiring lives in three marked places only. */
 const CAMS = { 'CAM-HOST':'Host camera', 'CAM-GUEST':'Guest camera', 'CAM-WIDE':'Wide shot' };
-/* one-shot adapter: more than three cameras. Any camera id the server names gets a tile (CAM-GUEST-2 -> "Guest 2"). */
+/* one-shot adapter: more than three cameras. Any camera id the server names gets a tile (CAM-GUEST-2 -> "Guest 2"); a
+   `cameras` message lists the ids that exist right now and the grid shows exactly those: no ghost tile for a camera whose
+   role changed or that was removed, and Host/Guest/Wide hidden while no camera has that role. Digit keys follow the numbers shown. */
+const BUILTIN = new Set(['CAM-HOST', 'CAM-GUEST', 'CAM-WIDE']);
+function visibleTiles(){ return [...document.querySelectorAll('.cam')].filter((t) => t.style.display !== 'none'); }
+function bindTiles(list){ const grid = document.querySelector('.cams'); if (!grid || !Array.isArray(list)) return; list.forEach(ensureTile); const want = new Set(list);
+  [...grid.querySelectorAll('.cam')].forEach((t) => { const cam = t.dataset.cam; if (want.has(cam)){ t.style.display = ''; return; }
+    if (BUILTIN.has(cam)) t.style.display = 'none'; else { delete CAMS[cam]; if (FRAMES.last[cam]){ try { FRAMES.last[cam].close(); } catch {} delete FRAMES.last[cam]; } t.remove(); } });
+  const vis = visibleTiles(); vis.forEach((t, i) => { t.querySelector('.key').textContent = String(i + 1); });
+  grid.style.gridTemplateColumns = 'repeat(' + Math.max(1, vis.length) + ',minmax(0,1fr))'; }
 function ensureTile(cam){ if (!cam || CAMS[cam]) return; const grid = document.querySelector('.cams'); if (!grid) return;
   const name = cam.replace(/^CAM-/, '').toLowerCase().replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
   CAMS[cam] = name + (/\d$/.test(name) ? '' : ' camera');
@@ -384,8 +393,7 @@ $('cBack').onclick = () => state.prev && take(state.prev); $('cWide').onclick = 
 document.querySelectorAll('.cam').forEach((t) => (t.onclick = () => take(t.dataset.cam)));
 document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => { document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t)); document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === t.dataset.pane)); }));
 addEventListener('keydown', (e) => { if (e.metaKey || e.ctrlKey || e.altKey) return; const k = e.key.toLowerCase();
-  if (k === '1') take('CAM-HOST'); else if (k === '2') take('CAM-GUEST'); else if (k === '3' || k === 'w' || k === '0') take('CAM-WIDE');
-  else if (/^[4-9]$/.test(k)){ const t = document.querySelectorAll('.cam')[+k - 1]; if (t) take(t.dataset.cam); }
+  if (/^[1-9]$/.test(k)){ const t = visibleTiles()[+k - 1]; if (t) take(t.dataset.cam); } else if (k === 'w' || k === '0') take('CAM-WIDE');
   else if (k === ' ' && state.sug){ e.preventDefault(); acceptSuggestion(); } else if (k === 'escape' && state.sug) skipSuggestion(false);
   else if (k === 'backspace' && state.prev){ e.preventDefault(); take(state.prev); } else if (k === 'h') userMode('manual'); else if (k === 's') userMode('assist'); else if (k === 'a') userMode('auto'); });
 setInterval(() => { $('clock').textContent = mmss(Date.now() - state.started).padStart(5, '0'); const on = Date.now() - state.liveSince, el = $('shot'); el.textContent = mmss(on); el.classList.toggle('long', on > 45000); }, 500);
@@ -412,7 +420,8 @@ function onServerMessage(m){ const t = m.type || m.event;
   else if (t === 'prepare') CUE.setNext(m.camera || m.camera_id); else if (t === 'stand_down') CUE.setNext(null);
   else if (t === 'camera_state'){ ensureTile(m.camera || m.camera_id); CUE.setCameraState(m.camera || m.camera_id, { ready:m.ready, note:m.note }); }
   else if (t === 'mic_level') CUE.setMicLevel(Number(m.level) || 0);
-  else if (t === 'error') pushFeed({ who:'cue', text:'Refused: ' + (m.error || 'unknown error') }); }
+  else if (t === 'error') pushFeed({ who:'cue', text:'Refused: ' + (m.error || 'unknown error') });
+  else if (t === 'cameras') bindTiles(m.cameras); }
 function connect(){ let opened = false; try { const ws = state.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
   ws.binaryType = 'arraybuffer'; ws.onopen = () => { opened = true; };
   ws.onmessage = (ev) => { if (typeof ev.data !== 'string'){ onFrame(ev.data); return; } try { onServerMessage(JSON.parse(ev.data)); } catch {} };

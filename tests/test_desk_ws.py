@@ -253,3 +253,26 @@ def test_manual_take_reaches_the_desk_as_a_decision(tmp_path):
     show.control("take", "C")
     again = show.snapshot()
     assert again["decision_ver"] == after["decision_ver"] and [m for m in dw.diff_messages(after, again, cmap) if m["type"] == "decision"] == []
+
+
+def test_cameras_message_lists_existing_tiles_in_desk_order_and_only_when_changed():
+    import json as _json
+    cams = {"A": {"role": "audience", "connected": True, "healthy": True}, "B": {"role": "audience", "connected": False, "healthy": False},
+            "D": {"role": "audience", "connected": True, "healthy": True}, "C": {"role": "guest", "connected": True, "healthy": True}}
+    assert dw.cameras_message(dw.camera_map(cams)) == {"type": "cameras", "cameras": ["CAM-GUEST", "CAM-AUDIENCE", "CAM-AUDIENCE-2", "CAM-AUDIENCE-3"]}
+
+    class WS:  # never sent to: offer_state only queues text
+        pass
+
+    client = dw.DeskClient(WS())
+    client.offer_state(_json.dumps(snap(cameras=cams)))
+    first = [_json.loads(m) for m in client.texts]
+    assert [m for m in first if m["type"] == "cameras"] == [dw.cameras_message(dw.camera_map(cams))]
+    client.texts.clear()
+    client.offer_state(_json.dumps(snap(cameras=cams)))          # nothing changed: not repeated
+    assert [m for m in map(_json.loads, client.texts) if m["type"] == "cameras"] == []
+    cams["A"]["role"] = "wide"; cams["B"]["role"] = "host"; del cams["D"]   # roles fixed on /setup, a camera removed
+    client.texts.clear()
+    client.offer_state(_json.dumps(snap(cameras=cams)))
+    msgs = [m for m in map(_json.loads, client.texts) if m["type"] == "cameras"]
+    assert msgs == [{"type": "cameras", "cameras": ["CAM-HOST", "CAM-GUEST", "CAM-WIDE"]}]   # the audience tiles are gone
