@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUE Camera</title>
+<style>
+  body{margin:0;background:#000;color:#e8edf2;font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;display:flex;flex-direction:column;height:100vh}
+  video{flex:1;object-fit:contain;background:#000;min-height:0}
+  .bar{display:flex;gap:10px;align-items:center;padding:10px 14px;background:#14181d;border-top:1px solid #2a323c;flex-wrap:wrap}
+  .bar b{color:#ff3b3b} .st{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:#93a1b1}
+  button,select{background:#1b2129;color:#e8edf2;border:1px solid #2a323c;border-radius:6px;padding:6px 10px}
+  .warn{background:#3a2a00;color:#ffd27a;padding:10px 14px;font-size:13px}
+  .warn.err{background:#5a1d1d;color:#ffd6d6}
+</style>
+</head>
+<body>
+<div class="warn" id="warn" style="display:none"></div>
+<video id="v" autoplay playsinline muted></video>
+<div class="bar">
+  <span>CUE camera <b id="camId"></b></span>
+  <select id="devices"></select>
+  <button id="start">Start</button>
+  <span class="st" id="st">idle</span>
+</div>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const cam = (q.get('cam') || 'B').toUpperCase();
+  const label = q.get('label') || '';
+  const fps = Math.min(30, Math.max(1, +(q.get('fps') || 15))), W = +(q.get('w') || 640), H = +(q.get('h') || 360), Q = +(q.get('q') || 0.7);
+  document.getElementById('camId').textContent = cam;
+  const st = document.getElementById('st'), v = document.getElementById('v'), sel = document.getElementById('devices'), warn = document.getElementById('warn'), btn = document.getElementById('start');
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  function showWarn(html, err) { warn.style.display = 'block'; warn.className = 'warn' + (err ? ' err' : ''); warn.innerHTML = html; }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    showWarn(`Chrome blocks the webcam on plain http:// for non-localhost pages. Fix once: open <code>chrome://flags/#unsafely-treat-insecure-origin-as-secure</code>, add <code>${esc(location.origin)}</code>, set Enabled, relaunch Chrome. Or run <code>camera/stream_camera.py</code> instead (no browser needed).`);
+  }
+  async function listDevices() {
+    try { const ds = await navigator.mediaDevices.enumerateDevices(); sel.innerHTML = ds.filter((d) => d.kind === 'videoinput').map((d, i) => `<option value="${esc(d.deviceId)}">${esc(d.label || 'camera ' + (i + 1))}</option>`).join(''); } catch (e) {}
+  }
+  listDevices();
+  let ws = null, running = false, sending = false, frames = 0, bytes = 0, t0 = performance.now(), stream = null, lastSent = 0;
+  function connect() {
+    if (!running) return;
+    let url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ingest?cam=${encodeURIComponent(cam)}`;
+    if (label) url += `&label=${encodeURIComponent(label)}`;
+    ws = new WebSocket(url);
+    ws.onopen = () => { const hello = { type: 'hello', cam, width: W, height: H, fps }; if (label) hello.label = label; ws.send(JSON.stringify(hello)); };
+    ws.onclose = () => { ws = null; if (running) setTimeout(connect, 1000); };
+  }
+  const c = document.createElement('canvas'); c.width = W; c.height = H; const ctx = c.getContext('2d');
+  function pump(now) {
+    if (!running) return;
+    if (ws && ws.readyState === 1 && !sending && ws.bufferedAmount < 400000 && now - lastSent >= 1000 / fps - 2) {
+      sending = true; lastSent = now;
+      const vw = v.videoWidth || W, vh = v.videoHeight || H, s = Math.min(W / vw, H / vh), dw = vw * s, dh = vh * s;
+      ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
+      ctx.drawImage(v, (W - dw) / 2, (H - dh) / 2, dw, dh);   // letterbox, never stretch
+      c.toBlob((b) => { if (b && ws && ws.readyState === 1) { ws.send(b); frames++; bytes += b.size; } sending = false; }, 'image/jpeg', Q);
+    }
+    if (v.requestVideoFrameCallback) v.requestVideoFrameCallback((t) => pump(performance.now())); else setTimeout(() => pump(performance.now()), 1000 / fps / 2);
+  }
+  document.addEventListener('visibilitychange', () => { if (document.hidden && running) showWarn('Keep this tab visible: Chrome throttles hidden tabs and the camera will stall.', true); else if (running) warn.style.display = 'none'; });
+  btn.onclick = async () => {
+    if (running) { running = false; btn.textContent = 'Start'; if (ws) ws.close(); if (stream) stream.getTracks().forEach((t) => t.stop()); st.textContent = 'stopped'; return; }
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { deviceId: sel.value ? { exact: sel.value } : undefined, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false });
+    } catch (e) { showWarn(`Camera error: ${esc(e.name)}: ${esc(e.message)} (permission denied, camera in use, or insecure origin)`, true); return; }
+    v.srcObject = stream; await v.play(); listDevices();
+    running = true; btn.textContent = 'Stop'; warn.style.display = 'none';
+    connect(); pump(performance.now());
+    setInterval(() => { if (!running) return; const dt = (performance.now() - t0) / 1000; st.textContent = `${(frames / dt).toFixed(1)} fps · ${(bytes * 8 / dt / 1000).toFixed(0)} kb/s · ${ws && ws.readyState === 1 ? 'connected' : 'reconnecting'}`; frames = 0; bytes = 0; t0 = performance.now(); }, 2000);
+  };
+})();
+</script>
+</body>
+</html>

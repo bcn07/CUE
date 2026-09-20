@@ -1,0 +1,364 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUE Director</title>
+<style>
+  :root{--bg:#0b0d10;--panel:#14181d;--panel2:#1b2129;--line:#2a323c;--fg:#e8edf2;--dim:#93a1b1;--accent:#ff3b3b;--ok:#2ecc71;--warn:#f5b342;--blue:#4ea1ff;--purple:#b07cff;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:16px;margin:0;letter-spacing:.08em}
+  header h1 span{color:var(--accent)}
+  header .tag{color:var(--dim);font-size:12px}
+  header .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .svc{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--dim);padding:3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel2)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#555;display:inline-block}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--accent)}
+  .dot.rec{background:var(--accent);animation:blink 1s steps(2) infinite}
+  @keyframes blink{to{opacity:.25}}
+  #banner{display:none;background:#5a1d1d;color:#ffd6d6;padding:6px 16px;font-size:13px;text-align:center}
+  #banner.on{display:block}
+  #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#2a1a00;color:#ffd27a;border:1px solid #6a4a00;padding:8px 14px;border-radius:8px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:9}
+  #toast.on{opacity:1}
+  main{display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:12px;padding:12px 16px;height:calc(100vh - 49px)}
+  @media (max-width:1100px){main{grid-template-columns:1fr;height:auto}}
+  .left{display:flex;flex-direction:column;gap:10px;min-width:0}
+  .program{position:relative;background:#000;border:1px solid var(--line);border-radius:10px;overflow:hidden;aspect-ratio:16/9;max-height:62vh}
+  .program canvas{width:100%;height:100%;display:block;object-fit:contain}
+  .program .flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none;transition:opacity .25s}
+  .program .flash.on{opacity:.35;transition:none}
+  .badge{position:absolute;top:10px;left:10px;display:flex;gap:8px;align-items:center}
+  .live{background:var(--accent);color:#fff;font-weight:700;font-size:12px;letter-spacing:.12em;padding:4px 8px;border-radius:4px}
+  .live.slate{background:#444}
+  .live.hold{background:var(--warn);color:#111}
+  .live.offline{background:#333;color:#aaa}
+  .camlabel{background:rgba(0,0,0,.6);padding:4px 10px;border-radius:4px;font-size:13px}
+  .program .reason{position:absolute;left:10px;bottom:10px;right:10px;background:rgba(0,0,0,.6);padding:6px 10px;border-radius:6px;font-size:12px;color:#dfe6ee}
+  .program .reason b{color:#fff}
+  .offline .program canvas,.offline .cam canvas{filter:grayscale(1) brightness(.5)}
+  .multiview{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
+  .cam{position:relative;background:#000;border:1px solid var(--line);border-radius:8px;overflow:hidden;aspect-ratio:16/9;cursor:pointer}
+  .cam.live{outline:3px solid var(--accent)}
+  .cam canvas{width:100%;height:100%;display:block;object-fit:contain}
+  .cam .hdr{position:absolute;top:6px;left:6px;right:6px;display:flex;gap:6px;align-items:center;font-size:12px}
+  .cam .hdr .name{background:rgba(0,0,0,.65);padding:2px 7px;border-radius:4px}
+  .cam .hdr .role{color:var(--dim);background:rgba(0,0,0,.65);padding:2px 6px;border-radius:4px;font-size:11px;text-transform:uppercase}
+  .cam .hdr .fps{margin-left:auto;background:rgba(0,0,0,.65);padding:2px 6px;border-radius:4px;font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .cam .who{position:absolute;left:6px;bottom:6px;display:flex;gap:4px;flex-wrap:wrap}
+  .pill{background:rgba(46,204,113,.85);color:#04140a;font-size:11px;font-weight:600;padding:2px 7px;border-radius:999px}
+  .pill.vlm{background:rgba(176,124,255,.9);color:#12061f}
+  .pill.unk{background:rgba(255,255,255,.25);color:#fff;font-weight:500}
+  .cam .off{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px;background:repeating-linear-gradient(45deg,#111 0 10px,#0c0c0c 10px 20px)}
+  .cam .take{position:absolute;right:6px;bottom:6px;background:rgba(255,59,59,.9);color:#fff;border:0;border-radius:4px;font-size:11px;font-weight:700;padding:3px 8px;cursor:pointer;opacity:0;transition:opacity .15s}
+  .cam:hover .take{opacity:1}
+  .right{display:flex;flex-direction:column;gap:10px;overflow:auto;min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .card h2{margin:0 0 8px;font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;display:flex;align-items:center;gap:8px}
+  .card h2 .r{margin-left:auto;font-weight:400;letter-spacing:0;text-transform:none;font-family:var(--mono)}
+  .transcript{max-height:170px;overflow:auto;font-size:14px;display:flex;flex-direction:column;gap:5px}
+  .transcript .u{padding:5px 8px;border-radius:6px;background:var(--panel2)}
+  .transcript .u.interim{color:var(--dim);font-style:italic;background:transparent;border:1px dashed var(--line)}
+  .transcript .u .src{font-size:10px;color:var(--dim);margin-left:6px;text-transform:uppercase;letter-spacing:.08em}
+  .transcript .u.typed .src{color:var(--warn)}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}
+  .kv .k{color:var(--dim)} .kv .v{font-family:var(--mono);word-break:break-word}
+  .act{display:inline-block;padding:1px 8px;border-radius:4px;font-weight:700;font-family:var(--mono)}
+  .act.SHOW{background:var(--ok);color:#04140a} .act.WIDE{background:var(--blue);color:#041020} .act.HOST{background:var(--purple);color:#12061f} .act.HOLD{background:#555;color:#fff}
+  .act.TAKE{background:var(--accent);color:#fff} .act.STAY{background:#555;color:#fff} .act.SLATE{background:#222;color:#aaa;border:1px solid #444}
+  .lat{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .lat .m{background:var(--panel2);border-radius:8px;padding:8px}
+  .lat .m .l{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em}
+  .lat .m .n{font-family:var(--mono);font-size:20px;margin-top:2px}
+  .lat .m .n small{font-size:11px;color:var(--dim)}
+  .lat .m .p{font-family:var(--mono);font-size:11px;color:var(--dim)}
+  .controls{display:flex;gap:6px;flex-wrap:wrap}
+  button{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:7px 12px;font-size:13px;cursor:pointer}
+  button:hover{border-color:#4a5563}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  button.on{background:var(--ok);color:#04140a;border-color:var(--ok);font-weight:700}
+  button.hold.on{background:var(--warn);color:#111;border-color:var(--warn)}
+  button.rec.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .say{display:flex;gap:6px;margin-top:8px}
+  .say input{flex:1;background:#0d1015;border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--fg);font-size:14px}
+  .note{font-size:11px;color:var(--warn);margin-top:6px}
+  .log{font-family:var(--mono);font-size:11px;max-height:220px;overflow:auto;display:flex;flex-direction:column;gap:2px}
+  .log .e{display:flex;gap:8px}
+  .log .e .t{color:var(--dim);flex:none}
+  .log .e .k{flex:none;width:64px;text-transform:uppercase;letter-spacing:.05em}
+  .log .cut .k{color:var(--accent)} .log .cue .k{color:var(--ok)} .log .clause .k{color:var(--blue)} .log .decision .k{color:var(--dim)} .log .manual .k{color:var(--warn)} .log .vlm .k{color:var(--purple)} .log .camera .k{color:#7f8c9a} .log .record .k{color:var(--accent)} .log .bridge .k{color:var(--blue)}
+  a{color:var(--blue)}
+  .roster{display:flex;gap:6px;flex-wrap:wrap;font-size:12px}
+  .roster .p{background:var(--panel2);border-radius:6px;padding:3px 8px}
+  .roster .p.host{border:1px solid var(--purple)}
+  .roster .p small{color:var(--dim)}
+</style>
+</head>
+<body>
+<div id="banner">Disconnected from the director server. Reconnecting…</div>
+<header>
+  <h1><span>●</span> CUE</h1>
+  <div class="tag">follows what's happening, not who's loudest</div>
+  <div class="right" id="services"></div>
+  <a href="/setup" style="font-size:12px">setup</a>
+</header>
+<main>
+  <section class="left">
+    <div class="program" id="program">
+      <canvas id="programCanvas" width="1280" height="720"></canvas>
+      <div class="flash" id="flash"></div>
+      <div class="badge"><span class="live" id="liveBadge">LIVE</span><span class="camlabel" id="progLabel">waiting for cameras…</span></div>
+      <div class="reason" id="progReason"></div>
+    </div>
+    <div class="multiview" id="multiview"></div>
+    <div class="card" style="padding:8px 12px">
+      <div class="roster" id="roster"></div>
+    </div>
+  </section>
+  <aside class="right">
+    <div class="card">
+      <h2>Transcript <span class="r" id="micMeter"></span></h2>
+      <div class="transcript" id="transcript"></div>
+      <div class="say"><input id="sayInput" placeholder="Type a host line to test the pipeline (labelled as typed, not live speech)"><button id="sayBtn">Send</button></div>
+      <div class="note" id="sayNote"></div>
+    </div>
+    <div class="card">
+      <h2>Meaning <span class="r" id="cueSrc"></span></h2>
+      <div class="kv" id="cue"></div>
+    </div>
+    <div class="card">
+      <h2>Decision <span class="r" id="decVer"></span></h2>
+      <div class="kv" id="decision"></div>
+    </div>
+    <div class="card">
+      <h2>Latency</h2>
+      <div class="lat" id="latency"></div>
+    </div>
+    <div class="card">
+      <h2>Controls <span class="r" id="modeLabel"></span></h2>
+      <div class="controls" id="controls">
+        <button data-a="auto" id="btnAuto">AUTO</button>
+        <button data-a="hold" id="btnHold" class="hold">HOLD</button>
+        <button data-a="wide">WIDE</button>
+        <button data-a="host">HOST</button>
+        <button data-a="record" id="btnRec" class="rec">● REC</button>
+      </div>
+      <div class="controls" id="takes" style="margin-top:6px"></div>
+      <div class="note" id="recNote" style="color:#93a1b1"></div>
+    </div>
+    <div class="card">
+      <h2>Event log</h2>
+      <div class="log" id="log"></div>
+    </div>
+  </aside>
+</main>
+<div id="toast"></div>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const state = { snap: null, bitmaps: {}, program: null, ws: null, camEls: {}, takeBtns: {}, connected: false };
+  const progCanvas = $('programCanvas'), progCtx = progCanvas.getContext('2d');
+  let toastTimer = null;
+  function toast(msg) { const t = $('toast'); t.textContent = msg; t.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('on'), 3500); }
+
+  function connect() {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ws = new WebSocket(`${proto}://${location.host}/ui`);
+    ws.binaryType = 'arraybuffer';
+    ws.onopen = () => { state.connected = true; $('banner').classList.remove('on'); document.body.classList.remove('offline'); };
+    ws.onmessage = (ev) => {
+      if (typeof ev.data === 'string') {
+        let j; try { j = JSON.parse(ev.data); } catch (e) { return; }
+        if (j.type === 'error') { toast(j.error || 'error'); return; }
+        if (j.type !== 'state') return;
+        onState(j); return;
+      }
+      const u8 = new Uint8Array(ev.data);
+      const n = u8[0];
+      const cam = new TextDecoder().decode(u8.subarray(1, 1 + n));
+      if (state.snap && !state.snap.cameras[cam]) return; // frames for a camera we no longer show
+      const blob = new Blob([u8.subarray(1 + n)], { type: 'image/jpeg' });
+      createImageBitmap(blob).then((bm) => {
+        const old = state.bitmaps[cam];
+        state.bitmaps[cam] = bm;
+        if (old) old.close();
+      }).catch(() => {});
+    };
+    ws.onclose = () => {
+      state.connected = false;
+      $('banner').classList.add('on'); document.body.classList.add('offline');
+      const b = $('liveBadge'); b.className = 'live offline'; b.textContent = 'OFFLINE';
+      setTimeout(connect, 1000);
+    };
+    state.ws = ws;
+  }
+
+  function send(obj) { if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(obj)); else toast('not connected to the server'); }
+  function fmtMs(x) { return (x === null || x === undefined) ? '–' : Math.round(x); }
+  function esc(s) { return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+  function nameOf(pid) { const p = (state.snap?.roster || []).find((x) => x.id === pid); return p ? p.name.split(' ')[0] : pid; }
+
+  function ensureCamEl(cid) {
+    if (state.camEls[cid]) return state.camEls[cid];
+    const el = document.createElement('div');
+    el.className = 'cam';
+    el.innerHTML = `<canvas width="640" height="360"></canvas><div class="off">no signal</div>
+      <div class="hdr"><span class="name"></span><span class="role"></span><span class="fps"></span></div>
+      <div class="who"></div><button class="take">TAKE</button>`;
+    el.querySelector('.take').onclick = (e) => { e.stopPropagation(); send({ type: 'control', action: 'take', camera_id: cid }); };
+    el.onclick = () => send({ type: 'control', action: 'take', camera_id: cid });
+    $('multiview').appendChild(el);
+    state.camEls[cid] = el;
+    return el;
+  }
+
+  function syncTakeButtons(cams) {
+    for (const cid of cams) {
+      if (!state.takeBtns[cid]) {
+        const b = document.createElement('button');
+        b.textContent = `TAKE ${cid}`; b.dataset.a = 'take'; b.dataset.c = cid;
+        b.onclick = () => send({ type: 'control', action: 'take', camera_id: cid });
+        $('takes').appendChild(b); state.takeBtns[cid] = b;
+      }
+    }
+    for (const cid of Object.keys(state.takeBtns)) if (!cams.includes(cid)) { state.takeBtns[cid].remove(); delete state.takeBtns[cid]; }
+  }
+
+  function onState(s) {
+    state.snap = s;
+    const prog = s.program.camera_id;
+    if (prog !== state.program) { state.program = prog; flash(); }
+    const svc = s.services;
+    const dg = svc.deepgram, llm = svc.llm, vlm = svc.vlm, idn = svc.identity;
+    const rec = s.recording || {};
+    $('services').innerHTML = [
+      pill('Deepgram', !dg.configured ? 'bad' : (dg.connected ? 'ok' : 'warn'), !dg.configured ? 'no key' : (dg.connected ? `live · ${dg.model}` : (dg.error || 'connecting'))),
+      pill('LLM', llm.configured ? 'ok' : 'bad', llm.configured ? `${llm.model}${llm.provider === 'local' ? ' (local)' : ''}${llm.fast_path ? ' + fast path' : ''} · ${llm.calls || 0} calls${llm.errors ? ' · ' + llm.errors + ' err' : ''}` : 'no LLM → rules only'),
+      pill('VLM', vlm.enabled ? 'ok' : 'warn', vlm.enabled ? `${vlm.model} · ${vlm.calls || 0} calls` : 'off'),
+      pill('Identity', idn.models_present ? (idn.gallery_size ? 'ok' : 'warn') : 'bad', idn.models_present ? `${idn.gallery_size} face refs` : 'models missing'),
+      ...(s.bridge && s.bridge.configured ? [pill('Team GUI', s.bridge.reachable === false ? 'bad' : (s.bridge.reachable ? 'ok' : 'warn'), s.bridge.reachable ? `${s.bridge.event_id} · ${s.bridge.team_mode || ''}${s.bridge.team_mode === 'AUTO' ? ' (cuts on air)' : (s.bridge.team_mode === 'ASSIST' ? ' (suggestions, operator takes)' : '')} · live ${s.bridge.team_live || '-'} · ${s.bridge.takes} sent${s.bridge.errors ? ' · ' + s.bridge.errors + ' err' : ''}` : (s.bridge.last_error || 'connecting'))] : []),
+      pill('REC', rec.active ? (rec.mic_silent ? 'bad' : 'rec') : 'warn', rec.active ? `${Math.round(rec.elapsed_s || 0)}s · ${rec.cuts || 0} cuts${rec.audio_s ? (rec.mic_silent ? ' · MIC SILENT' : '') : ' · no audio'}` : (rec.count ? `${rec.count} saved` : 'off')),
+    ].join('');
+    const badge = $('liveBadge');
+    badge.className = 'live' + (s.mode === 'HOLD' ? ' hold' : '') + (prog ? '' : ' slate');
+    badge.textContent = s.mode === 'HOLD' ? 'HOLD' : (prog ? 'LIVE' : 'SLATE');
+    const cam = prog ? s.cameras[prog] : null;
+    const who = cam ? Object.keys(cam.identity.present || {}).map((p) => nameOf(p)).join(', ') : '';
+    $('progLabel').textContent = cam ? `${cam.label}${who ? ' · ' + who : ''}` : (Object.keys(s.cameras).length ? 'no healthy camera' : 'waiting for cameras…');
+    const d = s.last_decision;
+    $('progReason').innerHTML = d ? `<b>${esc(d.action)}</b> ${esc(d.reason)}${d.evidence ? ` <span style="color:#93a1b1">· evidence: ${esc(d.evidence)}</span>` : ''}${s.pending_cue ? ` <span style="color:#f5b342">· pending: ${esc(s.pending_cue.action)} ${esc(s.pending_cue.target_ids.join(','))}</span>` : ''}` : '';
+    for (const [cid, c] of Object.entries(s.cameras)) {
+      const el = ensureCamEl(cid);
+      el.classList.toggle('live', cid === prog);
+      el.querySelector('.name').textContent = `${cid} · ${c.label}`;
+      el.querySelector('.role').textContent = c.role + (c.fixed_person ? ` → ${nameOf(c.fixed_person)}` : '');
+      el.querySelector('.fps').textContent = c.healthy ? `${c.fps} fps · ${c.kbps} kb/s` : (c.connected ? 'stalled' : 'offline');
+      el.querySelector('.off').style.display = c.healthy ? 'none' : 'flex';
+      const present = c.identity.present || {};
+      const pills = Object.entries(present).map(([pid, v]) => `<span class="pill ${v.source === 'vlm' ? 'vlm' : ''}">${esc(nameOf(pid))} <small>${v.source === 'vlm' ? 'vlm' : Number(v.similarity).toFixed(2)} · ${esc(v.age_s)}s</small></span>`);
+      const unk = (c.identity.faces || []).filter((f) => !f.person_id).length;
+      if (unk) pills.push(`<span class="pill unk">${unk} unknown face${unk > 1 ? 's' : ''}</span>`);
+      el.querySelector('.who').innerHTML = pills.join('');
+    }
+    for (const cid of Object.keys(state.camEls)) if (!s.cameras[cid]) {
+      state.camEls[cid].remove(); delete state.camEls[cid];
+      if (state.bitmaps[cid]) { state.bitmaps[cid].close(); delete state.bitmaps[cid]; }
+    }
+    syncTakeButtons(Object.keys(s.cameras));
+    $('roster').innerHTML = s.roster.length ? s.roster.map((p) => `<span class="p ${p.is_host ? 'host' : ''}">${esc(p.name)} <small>${p.is_host ? 'host · ' : ''}${p.faces}/${p.photos} faces</small></span>`).join('') : '<span style="color:#93a1b1">No people enrolled yet → <a href="/setup">setup</a></span>';
+    const tr = s.transcript.map((u) => `<div class="u ${u.source === 'typed' ? 'typed' : ''}">${esc(u.text)}<span class="src">${u.source === 'typed' ? 'typed test' : 'mic'}${u.final ? '' : ' …'}</span></div>`);
+    if (s.interim) tr.push(`<div class="u interim">${esc(s.interim.text)}</div>`);
+    const tEl = $('transcript'); tEl.innerHTML = tr.join(''); tEl.scrollTop = tEl.scrollHeight;
+    $('micMeter').textContent = dg.mic_level !== null && dg.mic_level !== undefined ? 'mic ' + '▮'.repeat(Math.round(Math.min(1, dg.mic_level) * 8)).padEnd(8, '▯') : '';
+    $('sayNote').textContent = !dg.configured ? 'No DEEPGRAM_API_KEY: live mic is off. Typed lines are test input and are labelled as such.' : '';
+    const cue = s.last_cue;
+    $('cueSrc').textContent = cue ? `${cue.source} · ${fmtMs(cue.latency_ms)} ms` : '';
+    $('cue').innerHTML = cue ? kv([
+      ['subject', cue.target_ids.length ? esc(cue.target_ids.map(nameOf).join(', ')) : '—'],
+      ['intent', esc(cue.intent)], ['timing', esc(cue.temporal_intent)], ['scope', esc(cue.scope)],
+      ['action', `<span class="act ${esc(cue.action)}">${esc(cue.action)}</span>`],
+      ['evidence', `“${esc(cue.evidence_text)}”`], ['clause', esc(cue.clause_text)],
+    ]) : '<span style="color:#93a1b1">waiting for speech…</span>';
+    $('decVer').textContent = d ? `#${s.decision_ver}` : '';
+    $('decision').innerHTML = d ? kv([
+      ['action', `<span class="act ${esc(d.action)}">${esc(d.action)}</span>`], ['camera', esc(d.camera_id || '—')],
+      ['evidence', esc(d.evidence || '—')], ['reason', esc(d.reason)],
+    ]) : '';
+    const L = s.latency;
+    $('latency').innerHTML = [
+      m('interpret', L.interpret_ms, 'ms', 'rules/LLM per clause'),
+      m('LLM', L.llm_ms, 'ms', llm.configured ? esc(llm.model) : 'off'),
+      m('clause→cut', L.clause_to_cut_ms, 'ms', 'transcript in → program out'),
+      m('speech→cut', L.speech_to_cut_ms, 'ms', 'est. from audio time'),
+      mid('identity', L.identity_ms),
+      m('decide', L.decide_ms, 'ms', 'director, pure code'),
+    ].join('');
+    $('modeLabel').textContent = `${s.mode} · ${s.counters.cuts} cuts · ${s.counters.holds} holds`;
+    $('btnAuto').classList.toggle('on', s.mode === 'AUTO');
+    $('btnHold').classList.toggle('on', s.mode === 'HOLD');
+    $('btnRec').classList.toggle('on', !!rec.active);
+    $('btnRec').textContent = rec.active ? '■ STOP REC' : '● REC';
+    $('recNote').textContent = rec.active ? `recording ${Math.round(rec.elapsed_s || 0)}s → ${rec.dir || ''}${rec.mic_silent ? '  ·  the microphone is delivering silence: check macOS mic permission / input device' : ''}` : (rec.last ? `last recording: ${rec.last}` : 'REC records the program output + master audio + cut log under data/recordings/');
+    $('log').innerHTML = s.events.slice().reverse().map((e) => `<div class="e ${esc(e.kind)}"><span class="t">${new Date(e.wall * 1000).toLocaleTimeString([], { hour12: false })}</span><span class="k">${esc(e.kind)}</span><span>${esc(e.text)}</span></div>`).join('');
+  }
+
+  function pill(name, cls, txt) { return `<span class="svc"><span class="dot ${cls}"></span>${name} <span style="color:#c5cfda">${esc(txt)}</span></span>`; }
+  function kv(rows) { return rows.map(([k, v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join(''); }
+  function m(l, st, unit, sub) { return `<div class="m"><div class="l">${l}</div><div class="n">${fmtMs(st?.last)}<small> ${unit}</small></div><div class="p">p50 ${fmtMs(st?.p50)} · p95 ${fmtMs(st?.p95)} · n${st?.n ?? 0}</div><div class="p">${sub}</div></div>`; }
+  function mid(l, st) { return `<div class="m"><div class="l">${l}</div><div class="n">${fmtMs(st?.last)}<small> ms</small></div><div class="p">avg ${fmtMs(st?.avg)} · ${st?.frames ?? 0} frames</div><div class="p">YuNet + SFace, local</div></div>`; }
+  function flash() { const f = $('flash'); f.classList.add('on'); requestAnimationFrame(() => setTimeout(() => f.classList.remove('on'), 30)); }
+
+  function draw() {
+    requestAnimationFrame(draw);
+    const s = state.snap; if (!s) return;
+    for (const [cid, el] of Object.entries(state.camEls)) {
+      const bm = state.bitmaps[cid]; if (!bm) continue;
+      const cv = el.querySelector('canvas');
+      if (cv.width !== bm.width || cv.height !== bm.height) { cv.width = bm.width; cv.height = bm.height; }
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(bm, 0, 0);
+      const idn = s.cameras[cid]?.identity;
+      if (idn && idn.faces && idn.frame_size && idn.frame_size[0]) {
+        const sx = cv.width / idn.frame_size[0], sy = cv.height / idn.frame_size[1];
+        for (const f of idn.faces) {
+          const [x, y, w, h] = f.box;
+          ctx.lineWidth = 3; ctx.strokeStyle = f.person_id ? '#2ecc71' : 'rgba(255,255,255,.6)';
+          ctx.strokeRect(x * sx, y * sy, w * sx, h * sy);
+          const label = f.person_id ? `${nameOf(f.person_id)} ${Number(f.similarity).toFixed(2)}` : (f.decision === 'AMBIGUOUS' ? '?' : '');
+          if (label) { ctx.font = `${Math.max(14, cv.width / 40)}px sans-serif`; ctx.fillStyle = 'rgba(0,0,0,.6)'; const tw = ctx.measureText(label).width; ctx.fillRect(x * sx, y * sy - cv.width / 30, tw + 10, cv.width / 30); ctx.fillStyle = '#fff'; ctx.fillText(label, x * sx + 5, y * sy - cv.width / 100); }
+        }
+      }
+    }
+    const pb = state.program ? state.bitmaps[state.program] : null;
+    if (pb) {
+      if (progCanvas.width !== pb.width || progCanvas.height !== pb.height) { progCanvas.width = pb.width; progCanvas.height = pb.height; }
+      progCtx.drawImage(pb, 0, 0);
+    } else {
+      progCtx.fillStyle = '#000'; progCtx.fillRect(0, 0, progCanvas.width, progCanvas.height);
+      progCtx.fillStyle = '#334'; progCtx.font = '40px sans-serif'; progCtx.textAlign = 'center';
+      progCtx.fillText(state.snap && Object.keys(state.snap.cameras).length ? 'SLATE' : 'CUE', progCanvas.width / 2, progCanvas.height / 2);
+    }
+  }
+
+  $('controls').querySelectorAll('button').forEach((b) => {
+    b.onclick = () => {
+      if (b.dataset.a === 'record') { send({ type: 'control', action: state.snap?.recording?.active ? 'record_stop' : 'record_start' }); return; }
+      send({ type: 'control', action: b.dataset.a });
+    };
+  });
+  $('sayBtn').onclick = () => { const v = $('sayInput').value.trim(); if (v) { send({ type: 'say', text: v }); $('sayInput').value = ''; } };
+  $('sayInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('sayBtn').onclick(); });
+  document.addEventListener('keydown', (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey || e.repeat) return;             // never hijack Cmd+C / Cmd+A / Cmd+W
+    if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON'].includes(e.target.tagName)) return;
+    const k = e.key.toUpperCase();
+    if (k === 'H') send({ type: 'control', action: state.snap?.mode === 'HOLD' ? 'auto' : 'hold' });
+    else if (k === 'W') send({ type: 'control', action: 'wide' });
+    else if (state.snap && state.snap.cameras[k]) send({ type: 'control', action: 'take', camera_id: k });
+  });
+  connect(); draw();
+})();
+</script>
+</body>
+</html>

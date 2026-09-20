@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUE Setup</title>
+<style>
+  :root{--bg:#0b0d10;--panel:#14181d;--panel2:#1b2129;--line:#2a323c;--fg:#e8edf2;--dim:#93a1b1;--accent:#ff3b3b;--ok:#2ecc71;--warn:#f5b342;--blue:#4ea1ff;--mono:ui-monospace,SFMono-Regular,Menlo,monospace}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif}
+  header{display:flex;align-items:center;gap:14px;padding:10px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  header h1{font-size:16px;margin:0;letter-spacing:.08em} header h1 span{color:var(--accent)} header a{margin-left:auto;color:var(--blue);font-size:12px}
+  main{max-width:1100px;margin:0 auto;padding:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:900px){main{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .card.wide{grid-column:1/-1}
+  h2{margin:0 0 10px;font-size:12px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase}
+  label{display:block;font-size:12px;color:var(--dim);margin:8px 0 4px}
+  input[type=text],textarea,select{width:100%;background:#0d1015;border:1px solid var(--line);border-radius:6px;padding:8px 10px;color:var(--fg);font-size:14px}
+  textarea{min-height:180px;font-family:var(--mono);font-size:12px}
+  button{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:8px 14px;font-size:13px;cursor:pointer;margin-top:10px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  button.small{padding:3px 8px;font-size:11px;margin:0}
+  .people{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:10px}
+  .person{background:var(--panel2);border-radius:8px;padding:8px;font-size:12px}
+  .person img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#000}
+  .person .n{font-weight:600;margin-top:6px} .person .d{color:var(--dim)} .person .bad{color:var(--warn)}
+  .person.host{outline:1px solid #b07cff}
+  code,pre{font-family:var(--mono);font-size:12px} pre{background:#0d1015;border:1px solid var(--line);border-radius:6px;padding:10px;overflow:auto;margin:6px 0}
+  table{width:100%;border-collapse:collapse;font-size:13px} td,th{padding:6px 6px;border-bottom:1px solid var(--line);text-align:left} th{color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.08em}
+  .msg{font-size:12px;color:var(--ok);margin-top:6px;min-height:16px} .msg.err{color:var(--accent)} .msg.warn{color:var(--warn)}
+  .hint{font-size:12px;color:var(--dim)}
+  .dirty{color:var(--warn);font-size:12px;margin-left:8px}
+  .recs{font-size:12px} .recs div{padding:4px 0;border-bottom:1px solid var(--line)}
+</style>
+</head>
+<body>
+<header><h1><span>●</span> CUE setup</h1><a href="/">→ director view</a></header>
+<main>
+  <div class="card wide">
+    <h2>1 · Start the cameras (one command per laptop)</h2>
+    <div class="hint">Same Wi-Fi as this MacBook. Copy the line for each laptop. <code>--cam</code> is the camera id used everywhere below.</div>
+    <pre id="camCmds">loading…</pre>
+    <div class="hint">Windows: <code>camera\run_camera.bat --server ws://IP:PORT --cam B</code>. No Python on that laptop? Open <code id="camUrl"></code> in Chrome instead (see the note on that page).</div>
+  </div>
+
+  <div class="card">
+    <h2>2 · People (photos tagged with names)</h2>
+    <form id="personForm">
+      <label>Full name</label><input type="text" name="name" required placeholder="Sarah Tan">
+      <label>Aliases the host might say (comma separated)</label><input type="text" name="aliases" placeholder="Sarah, Ms Tan">
+      <label>Role in the event</label><input type="text" name="role" placeholder="guest of honour">
+      <label><input type="checkbox" name="is_host"> This person is the HOST (the one on the mic)</label>
+      <label>Photos (2–5 clear, front-facing; one face per photo works best)</label><input type="file" name="photos" accept="image/*" multiple required>
+      <button class="primary" type="submit">Enroll</button>
+      <div class="msg" id="personMsg"></div>
+    </form>
+    <div class="people" id="people"></div>
+  </div>
+
+  <div class="card">
+    <h2>3 · Event script / run of show</h2>
+    <div class="hint">Paste the rundown, names, segment order. The interpreter reads it as context (the live words always win). Or upload a .md/.txt.</div>
+    <textarea id="script" placeholder="Segment 1: Host welcomes everyone.&#10;Segment 2: Sarah Tan (guest of honour) speaks about…&#10;Segment 3: Panel with Daniel and Priya…"></textarea>
+    <input type="file" id="scriptFile" accept=".md,.txt,text/*" style="margin-top:8px">
+    <button class="primary" id="saveScript">Save script</button>
+    <div class="msg" id="scriptMsg"></div>
+  </div>
+
+  <div class="card wide">
+    <h2>4 · Cameras <span class="dirty" id="camDirty"></span></h2>
+    <div class="hint">Roles: <b>wide</b> = the safe shot the director falls back to; <b>host</b> = where the host sits (fallback for “back to me”); <b>guest</b> = a close-up. “Fixed person” is only used when the face on that camera cannot be confirmed live. Labels you save here win over what the laptop announces.</div>
+    <table><thead><tr><th>id</th><th>label</th><th>role</th><th>fixed person (fallback)</th><th>status</th><th></th></tr></thead><tbody id="cams"></tbody></table>
+    <button id="addCam">+ add camera</button>
+    <button class="primary" id="saveCams">Save cameras</button>
+    <div class="msg" id="camMsg"></div>
+  </div>
+
+  <div class="card wide">
+    <h2>5 · Recordings</h2>
+    <div class="hint">REC on the director view records the program output, the master audio and a cut log under <code>data/recordings/</code>.</div>
+    <div class="recs" id="recs"></div>
+  </div>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  let snap = null;
+  let camsDirty = false;
+  let scriptDirty = false;
+  let scriptLoaded = false;
+  function setDirty(v) { camsDirty = v; $('camDirty').textContent = v ? 'unsaved changes' : ''; }
+  async function load() {
+    snap = await (await fetch('/api/state')).json();
+    const ip = snap.setup.lan_ip, port = snap.setup.port;
+    const ids = Object.keys(snap.cameras);
+    $('camCmds').textContent = (ids.length ? ids : ['A', 'B', 'C']).map((c) => `./camera/run_camera.sh --server ws://${ip}:${port} --cam ${c}     # ${snap.cameras[c]?.label || 'Camera ' + c}`).join('\n');
+    $('camUrl').textContent = `http://${ip}:${port}/cam?cam=B`;
+    $('people').innerHTML = snap.roster.map((p) => `<div class="person ${p.is_host ? 'host' : ''}">
+      <img src="/api/people/${encodeURIComponent(p.id)}/thumb?v=${p.photos}" onerror="this.style.opacity=.2">
+      <div class="n">${esc(p.name)}${p.is_host ? ' · HOST' : ''}</div>
+      <div class="d">id ${esc(p.id)}${p.role ? ' · ' + esc(p.role) : ''}</div>
+      <div class="d">aliases: ${esc(p.aliases.join(', ')) || '—'}</div>
+      <div class="${p.faces ? 'd' : 'bad'}">${p.faces}/${p.photos} photos with a usable face${p.failed.length ? ' · failed: ' + esc(p.failed.join(', ')) : ''}</div>
+      <button class="small" data-del="${esc(p.id)}">remove</button></div>`).join('') || '<div class="hint">Nobody enrolled yet.</div>';
+    $('people').querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => { if (confirm(`Remove ${b.dataset.del}?`)) { await fetch(`/api/people/${encodeURIComponent(b.dataset.del)}`, { method: 'DELETE' }); load(); } });
+    if (!scriptLoaded && !scriptDirty) { $('script').value = (await (await fetch('/api/script')).json()).text || ''; scriptLoaded = true; }
+    if (!camsDirty) renderCams(snap.cameras); else updateCamStatus(snap.cameras);
+    loadRecordings();
+  }
+  function statusHtml(c) { return c ? (c.healthy ? `<span style="color:#2ecc71">● live ${c.fps} fps</span>` : (c.connected ? '<span style="color:#f5b342">● stalled</span>' : '<span style="color:#93a1b1">○ offline</span>')) : '<span style="color:#93a1b1">○ new</span>'; }
+  function renderCams(cams) {
+    const people = snap.roster;
+    $('cams').innerHTML = Object.entries(cams).map(([cid, c]) => `<tr data-cid="${esc(cid)}">
+      <td><b>${esc(cid)}</b></td>
+      <td><input type="text" class="label" value="${esc(c.label)}"></td>
+      <td><select class="role">${['wide', 'host', 'guest'].map((r) => `<option ${c.role === r ? 'selected' : ''}>${r}</option>`).join('')}</select></td>
+      <td><select class="fixed"><option value="">— none (identity only) —</option>${people.map((p) => `<option value="${esc(p.id)}" ${c.fixed_person === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></td>
+      <td class="status">${statusHtml(c)}</td>
+      <td><button class="small" data-rm="${esc(cid)}">×</button></td></tr>`).join('');
+    $('cams').querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => { b.closest('tr').remove(); setDirty(true); });
+    $('cams').querySelectorAll('input,select').forEach((el) => el.addEventListener('input', () => setDirty(true)));
+    $('cams').querySelectorAll('select').forEach((el) => el.addEventListener('change', () => setDirty(true)));
+  }
+  function updateCamStatus(cams) {
+    $('cams').querySelectorAll('tr').forEach((tr) => { const c = cams[tr.dataset.cid]; const td = tr.querySelector('.status'); if (td) td.innerHTML = statusHtml(c); });
+  }
+  $('addCam').onclick = () => {
+    const id = (prompt('Camera id (e.g. D)') || '').trim().toUpperCase(); if (!id) return;
+    const cams = collectCams(); if (!cams[id]) cams[id] = { label: `Camera ${id}`, role: 'guest', fixed_person: null };
+    renderCams(cams); setDirty(true);
+  };
+  function collectCams() {
+    const out = {};
+    $('cams').querySelectorAll('tr').forEach((tr) => { out[tr.dataset.cid] = { label: tr.querySelector('.label').value, role: tr.querySelector('.role').value, fixed_person: tr.querySelector('.fixed').value || null }; });
+    return out;
+  }
+  $('saveCams').onclick = async () => {
+    const r = await fetch('/api/cameras', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ cameras: collectCams() }) });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) {
+      const kept = j.kept_connected || [];
+      $('camMsg').className = kept.length ? 'msg warn' : 'msg';
+      $('camMsg').textContent = kept.length ? `Saved. ${kept.join(', ')} ${kept.length > 1 ? 'are' : 'is'} still streaming and was kept: stop that camera first to remove it.` : 'Saved.';
+      setDirty(false);
+    } else { $('camMsg').className = 'msg err'; $('camMsg').textContent = 'Failed: ' + (j.detail || r.status); }
+    load();
+  };
+  $('personForm').onsubmit = async (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    fd.set('is_host', e.target.is_host.checked ? 'true' : 'false');
+    $('personMsg').textContent = 'Enrolling…'; $('personMsg').className = 'msg';
+    const r = await fetch('/api/people', { method: 'POST', body: fd });
+    const j = await r.json().catch(() => ({}));
+    if (r.ok) { $('personMsg').textContent = `Enrolled ${j.id}: ${j.faces_enrolled} face(s) from ${j.saved_photos} photo(s)${j.failed.length ? '. No face found in: ' + j.failed.join(', ') : ''}`; if (!j.faces_enrolled) $('personMsg').className = 'msg err'; e.target.reset(); }
+    else { $('personMsg').textContent = 'Failed: ' + (j.detail || r.status); $('personMsg').className = 'msg err'; }
+    load();
+  };
+  $('script').addEventListener('input', () => { scriptDirty = true; });
+  $('scriptFile').onchange = async (e) => { const f = e.target.files[0]; if (f) { $('script').value = await f.text(); scriptDirty = true; } };
+  $('saveScript').onclick = async () => {
+    const r = await fetch('/api/script', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: $('script').value }) });
+    $('scriptMsg').textContent = r.ok ? `Saved (${(await r.json()).chars} chars). The interpreter now has this context.` : 'Failed';
+    if (r.ok) scriptDirty = false;
+  };
+  async function loadRecordings() {
+    try {
+      const j = await (await fetch('/api/recordings')).json();
+      $('recs').innerHTML = j.recordings.length ? j.recordings.map((r) => `<div>${esc(r.name)} · ${esc(r.status)} · ${Math.round(r.duration_s || 0)}s · ${r.cuts || 0} cuts · audio ${r.audio_s || 0}s${r.final ? ` · <a href="/recordings/${encodeURIComponent(r.name)}/${encodeURIComponent(r.final)}">${esc(r.final)}</a> · <a href="/recordings/${encodeURIComponent(r.name)}/cuts.jsonl">cuts.jsonl</a>` : ''}</div>`).join('') : '<div class="hint">No recordings yet.</div>';
+    } catch (e) { /* older server */ }
+  }
+  load();
+  setInterval(() => { const t = document.activeElement.tagName; if (!['INPUT', 'TEXTAREA', 'SELECT'].includes(t)) load(); }, 5000);
+})();
+</script>
+</body>
+</html>

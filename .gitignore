@@ -1,0 +1,9 @@
+.venv/
+camera/.venv/
+__pycache__/
+models/*.onnx
+data/
+.env
+dist/
+.pytest_cache/
+reports/llm_eval_*.json
