@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUE production desk - participants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#07080a; --shell:#101114; --surface:#17181c; --raised:#1f2026; --hover:#282a31;
+  --line:rgba(255,255,255,.07); --text:#f2f3f5; --soft:#c5c7ce; --muted:#8b8e98;
+  --air:#ff4d4f; --ready:#34d27b; --hold:#ffb224; --wide:#5aa9ff; --cue:#a78bfa;
+  --font:"Poppins","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;height:100dvh;overflow:hidden;background:var(--page);color:var(--text);font:400 12px/1.4 var(--font);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;padding:12px;position:relative}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #fff;outline-offset:3px}
+.glow{position:fixed;width:60vw;height:60vw;border-radius:50%;filter:blur(90px);opacity:.2;pointer-events:none;z-index:0}
+.glow.a{background:var(--cue);top:-32vw;right:-18vw;animation:drift 38s ease-in-out infinite alternate}
+.glow.b{background:var(--air);bottom:-38vw;left:-22vw;opacity:.11;animation:drift 46s ease-in-out infinite alternate-reverse}
+@keyframes drift{to{transform:translate(-6vw,5vw) scale(1.08)}}
+
+.shell{position:relative;z-index:1;height:100%;background:linear-gradient(180deg,#141519 0%,var(--shell) 42%,var(--shell) 100%);
+  border:1px solid rgba(255,255,255,.10);border-radius:16px;padding:14px;
+  display:grid;grid-template-rows:40px minmax(0,1fr);gap:11px;
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.85), 0 18px 40px -14px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.02) inset;
+  overflow:hidden}
+.shell::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.14) 20%,rgba(255,255,255,.14) 80%,transparent);pointer-events:none;z-index:2}
+
+/* header, same grammar as the desk */
+.top{display:flex;align-items:center;gap:11px;min-width:0}
+.logo{width:26px;height:26px;flex:none}
+.top h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;background:var(--raised);color:var(--soft);font-size:11px;font-weight:500;white-space:nowrap}
+.pill.cue{background:rgba(167,139,250,.16);color:#c9b8ff}
+.pill.warn{background:rgba(255,178,36,.16);color:#ffd489}
+.pill.bad{background:rgba(255,77,79,.16);color:#ff9d9e}
+.pill.ok{background:rgba(52,210,123,.16);color:#8ff0bb}
+a.pill{text-decoration:none}
+a.pill:hover{background:var(--hover)}
+.top .right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+.dot.ready{background:var(--ready)}.dot.cue{background:var(--cue)}.dot.hold{background:var(--hold)}.dot.air{background:var(--air)}
+.blink{animation:blink 1.2s steps(2,jump-none) infinite}@keyframes blink{50%{opacity:.25}}
+
+.main{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:12px}
+
+/* participants */
+.list{min-height:0;background:var(--surface);border:1px solid var(--line);border-radius:20px;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+.lhead{display:flex;align-items:center;gap:8px;padding:14px 14px 11px}
+.lhead .sec{font-size:12px;font-weight:600;margin:0}
+.lhead .sp{margin-left:auto;display:flex;gap:6px}
+.chip{height:28px;padding:0 12px;border-radius:999px;background:var(--raised);font-size:11.5px;font-weight:500;color:var(--soft)}
+.chip:hover{background:var(--hover);color:var(--text)}
+.chip.on{background:var(--cue);color:#160b33;font-weight:600}
+.grid{min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 14px 14px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent;
+  display:grid;grid-template-columns:repeat(auto-fill,minmax(228px,1fr));gap:11px;align-content:start}
+.grid::-webkit-scrollbar{width:6px}.grid::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:3px}
+
+.card{background:var(--raised);border:1px solid var(--line);border-radius:16px;overflow:hidden;display:grid;grid-template-rows:auto auto;animation:rise .18s ease-out}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.card.local{border-color:rgba(255,178,36,.4)}
+.faces{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line)}
+.face{position:relative;aspect-ratio:3/4;background:#000;display:grid;place-items:center;overflow:hidden}
+.face img{width:100%;height:100%;object-fit:cover;display:block}
+.face .ph{font-size:22px;font-weight:600;color:var(--muted)}
+.face b{position:absolute;left:6px;bottom:6px;font-size:10px;font-weight:500;padding:2px 7px;border-radius:6px;
+  background:rgba(14,15,18,.7);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);color:var(--soft)}
+.card .meat{padding:10px 12px 12px;display:grid;gap:8px;min-width:0}
+.card h3{margin:0;font-size:13.5px;font-weight:600;overflow-wrap:anywhere}
+.card .sub{color:var(--muted);display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.card .row{display:flex;align-items:center;gap:7px}
+select{height:30px;flex:1;min-width:0;padding:0 8px;border-radius:9px;background:var(--surface);border:1px solid var(--line);color:var(--text);font:500 11.5px var(--font)}
+.empty{grid-column:1/-1;color:var(--muted);text-align:center;padding:44px 16px;line-height:1.7}
+.empty b{color:var(--soft);font-weight:500}
+
+/* right panel */
+.panel{min-height:0;min-width:0;background:var(--surface);border:1px solid var(--line);border-radius:20px;
+  display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 14px 10px}
+.pbody{min-height:0;overflow-y:auto;overflow-x:hidden;padding:0 14px 14px;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+.pbody::-webkit-scrollbar{width:6px}.pbody::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:3px}
+.sec{margin:12px 2px 7px;font-size:12px;font-weight:600}
+.sec:first-child{margin-top:0}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 2px}
+.kv dt{color:var(--muted);white-space:nowrap}
+.kv dd{margin:0;font-weight:500;text-align:right;overflow-wrap:anywhere;min-width:0}
+.qr{display:grid;gap:8px;padding:12px;border-radius:14px;background:var(--raised)}
+.qr p{margin:0;color:var(--muted);font-size:11px}
+.qr code{display:block;padding:9px 11px;border-radius:9px;background:var(--surface);color:#c9b8ff;font-size:11px;overflow-wrap:anywhere;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.btn{height:36px;padding:0 14px;border-radius:11px;background:var(--raised);border:1px solid var(--line);color:var(--text);
+  font-weight:600;font-size:12px;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+.btn:hover{background:var(--hover)}
+.btn.go{background:var(--text);color:var(--page);border-color:transparent}
+.btn.go:hover{background:#fff}
+.btn.full{width:100%}
+.btn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.stack{display:grid;gap:7px}
+.warn{margin:0;padding:10px 12px;border-radius:12px;background:rgba(255,178,36,.1);border:1px solid rgba(255,178,36,.28);color:#ffd489;font-size:11.5px;line-height:1.55}
+.spin{width:13px;height:13px;border-radius:50%;border:2px solid rgba(255,255,255,.2);border-top-color:var(--cue);animation:spin .7s linear infinite;display:inline-block}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (max-width:980px){body{height:auto;overflow:auto}.shell{height:auto}.main{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="glow a"></div><div class="glow b"></div>
+<div class="shell">
+  <header class="top">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12.5" fill="none" stroke="#a78bfa" stroke-width="3.2"></circle><circle cx="16" cy="16" r="4.4" fill="#fff"></circle></svg>
+    <h1>CUE</h1>
+    <span class="pill cue"><span class="dot cue"></span>Production</span>
+    <span class="pill" id="countChip">0 participants</span>
+    <div class="right">
+      <span class="pill" id="linkChip"><span class="dot"></span>Checking</span>
+      <a class="pill" href="index.html">Open the live desk &#8599;</a>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="list">
+      <div class="lhead">
+        <p class="sec">Participants</p>
+        <div class="sp">
+          <button class="chip" id="refresh" type="button">Refresh</button>
+          <button class="chip" id="auto" type="button">Auto</button>
+        </div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </section>
+
+    <aside class="panel">
+      <div class="phead">
+        <span class="pill"><span class="dot ready"></span>Event</span>
+        <span class="pill" id="srcChip"></span>
+      </div>
+      <div class="pbody">
+        <div class="sec">Send guests here</div>
+        <div class="qr">
+          <p>Guests open this on their phone, type their name and take two photos.</p>
+          <code id="signupUrl">signup.html</code>
+          <div class="stack">
+            <button class="btn full" id="copy" type="button"><svg viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2.5"></rect><path d="M15 5.5A2.5 2.5 0 0 0 12.5 3H5.5A2.5 2.5 0 0 0 3 5.5v7A2.5 2.5 0 0 0 5.5 15"></path></svg>Copy the sign-up link</button>
+            <a class="btn full" id="openSignup" href="signup.html" target="_blank" rel="noopener">Open it here</a>
+          </div>
+        </div>
+
+        <div class="sec">The dashboard sheet</div>
+        <div class="stack">
+          <a class="btn go full" id="sheet" href="#" target="_blank" rel="noopener"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"></rect><path d="M4 9h16M4 15h16M10 3v18"></path></svg>Open the Google Sheet</a>
+          <button class="btn full" id="copyRoster" type="button"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h10"></path></svg>Copy the roster for the desk</button>
+        </div>
+
+        <div class="sec">Keep this event's data</div>
+        <div class="stack">
+          <button class="btn full" id="exportSheet" type="button"><svg viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2.5"></rect><path d="M9 12h6M12 9v6"></path></svg>Export to its own Google Sheet</button>
+          <button class="btn full" id="exportCsv" type="button"><svg viewBox="0 0 24 24"><path d="M12 3v12M7.5 10.5 12 15l4.5-4.5"></path><path d="M4 20h16"></path></svg>Download CSV</button>
+          <p class="note">The export makes a standalone copy in your Drive. This sheet is left untouched.</p>
+        </div>
+
+        <div class="sec">Cameras</div>
+        <dl class="kv" id="camCount"></dl>
+
+        <div class="sec">Consent</div>
+        <dl class="kv" id="consentKv"></dl>
+
+        <div id="notes"></div>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<script src="config.js" onerror="void 0"></script>
+<script>
+/* CUE production dashboard. Reads the same sheet the sign-up page writes to.
+   One wiring point: CFG.endpoint (config.js). */
+const CFG = Object.assign({ endpoint:'', eventId:'hackmit-demo', sheetUrl:'', pollMs:5000 }, window.CUE_SIGNUP || {});
+const CAMS = { '':'Not assigned', 'CAM-HOST':'Host camera', 'CAM-GUEST':'Guest camera', 'CAM-WIDE':'Wide shot' };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const QUEUE = 'cue.signup.queue';
+const ASSIGN = 'cue.dash.cameras';
+let people = [], sheetUrl = CFG.sheetUrl, timer = null, polling = false;
+
+/* Local camera assignments, so the desk mapping survives a reload even when the
+   sheet is not writable from here. The sheet stays the record of record. */
+const local = {
+  read(){ try { return JSON.parse(localStorage.getItem(ASSIGN) || '{}'); } catch { return {}; } },
+  set(id, cam){ try { const m = this.read(); if (cam) m[id] = cam; else delete m[id]; localStorage.setItem(ASSIGN, JSON.stringify(m)); } catch {} }
+};
+function queued(){ try { return JSON.parse(localStorage.getItem(QUEUE) || '[]'); } catch { return []; } }
+
+const signupHref = new URL('signup.html', location.href).href;
+$('signupUrl').textContent = signupHref;
+$('openSignup').href = signupHref;
+/* navigator.clipboard does not exist on a plain-HTTP origin, and this page is
+   normally served from a LAN address so phones can reach the sign-up link.
+   Fall back to the old execCommand path, which does work there. */
+async function copyText(text){
+  try { if (navigator.clipboard) { await navigator.clipboard.writeText(text); return true; } } catch {}
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', '');
+    ta.style.cssText = 'position:fixed;top:-1000px;opacity:0';
+    document.body.appendChild(ta); ta.select();
+    const ok = document.execCommand('copy');
+    ta.remove(); return ok;
+  } catch { return false; }
+}
+$('copy').onclick = async () => {
+  flash($('copy'), (await copyText(signupHref)) ? 'Copied' : 'Copy it from the box above');
+};
+$('copyRoster').onclick = async () => {
+  /* Exactly the shape the desk's `roster` message carries. */
+  const msg = { type:'roster', guests:people.map((p) => ({ name:p.name, role:p.role || '' })) };
+  const ok = await copyText(JSON.stringify(msg, null, 2));
+  flash($('copyRoster'), ok ? people.length + ' guests copied' : 'Clipboard blocked');
+};
+function flash(btn, text){ const was = btn.innerHTML; btn.textContent = text; setTimeout(() => (btn.innerHTML = was), 1600); }
+
+/* ---- load ---- */
+async function load(){
+  if (polling) return;
+  polling = true;
+  $('linkChip').innerHTML = '<span class="spin"></span>Loading';
+  $('linkChip').className = 'pill';
+  let remote = null, why = '';
+  if (CFG.endpoint){
+    try {
+      const url = CFG.endpoint + (CFG.endpoint.includes('?') ? '&' : '?') + 'action=roster&eventId=' + encodeURIComponent(CFG.eventId);
+      const res = await fetch(url, { redirect:'follow' });
+      const body = await res.json();
+      if (!res.ok || body.ok === false) throw new Error(body.error || ('HTTP ' + res.status));
+      remote = Array.isArray(body.participants) ? body.participants : [];
+      if (body.sheetUrl) sheetUrl = body.sheetUrl;
+    } catch (e) { why = String((e && e.message) || e); }
+  } else { why = 'no endpoint in config.js'; }
+
+  const pending = queued().map((r) => Object.assign({}, r, { pending:true }));
+  const seen = new Set((remote || []).map((p) => p.guestId));
+  people = (remote || []).concat(pending.filter((p) => !seen.has(p.guestId)));
+  const cams = local.read();
+  people.forEach((p) => { if (!p.camera && cams[p.guestId]) p.camera = cams[p.guestId]; });
+
+  paintLink(remote, why, pending.length);
+  paint();
+  polling = false;
+}
+function paintLink(remote, why, pendingCount){
+  const chip = $('linkChip');
+  if (remote){ chip.className = 'pill ok'; chip.innerHTML = '<span class="dot ready"></span>Sheet connected'; }
+  else { chip.className = 'pill bad'; chip.innerHTML = '<span class="dot air blink"></span>Sheet not reachable'; }
+  $('srcChip').textContent = remote ? 'Live from the sheet' : 'This device only';
+  $('srcChip').className = 'pill' + (remote ? '' : ' warn');
+  $('sheet').style.opacity = sheetUrl ? '' : '.4';
+  $('sheet').href = sheetUrl || '#';
+  const notes = [];
+  if (!remote) notes.push('<p class="warn"><b>Not reading the Google Sheet</b> (' + esc(why) + '). Anything below came from this browser only, so other machines will not see it. Set <code>endpoint</code> in <code>config.js</code> to the Apps Script <code>/exec</code> URL.</p>');
+  if (pendingCount) notes.push('<p class="warn">' + pendingCount + ' sign-up' + (pendingCount === 1 ? '' : 's') + ' on this device never reached the sheet. They are marked <b>Not in the sheet</b>.</p>');
+  $('notes').innerHTML = notes.length ? '<div class="sec">Heads up</div>' + notes.join('') : '';
+}
+
+/* ---- paint ---- */
+function paint(){
+  $('countChip').textContent = people.length + (people.length === 1 ? ' participant' : ' participants');
+  const grid = $('grid');
+  if (!people.length){
+    grid.innerHTML = '<div class="empty">Nobody has signed up yet.<br><b>Send a guest the sign-up link</b> from the panel on the right.<br>They appear here as soon as they press Send.</div>';
+  } else {
+    grid.innerHTML = people.map(card).join('');
+    grid.querySelectorAll('select').forEach((sel) => (sel.onchange = () => {
+      const p = people.find((x) => x.guestId === sel.dataset.id);
+      if (!p) return;
+      p.camera = sel.value; local.set(p.guestId, sel.value);
+      assign(p.guestId, sel.value); paintCounts();
+    }));
+  }
+  paintCounts();
+}
+function card(p){
+  const initial = esc((p.name || '?').trim().charAt(0).toUpperCase());
+  const face = (src, label) => '<div class="face">' +
+    (src ? '<img src="' + esc(src) + '" alt="' + esc(label + ' photo of ' + p.name) + '" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement(\'span\'),{className:\'ph\',textContent:\'' + initial + '\'}))">'
+         : '<span class="ph">' + initial + '</span>') +
+    '<b>' + esc(label) + '</b></div>';
+  const when = p.submittedAt ? new Date(p.submittedAt) : null;
+  const time = when && !isNaN(when) ? when.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' }) : '';
+  const opts = Object.keys(CAMS).map((c) => '<option value="' + c + '"' + (c === (p.camera || '') ? ' selected' : '') + '>' + esc(CAMS[c]) + '</option>').join('');
+  return '<article class="card' + (p.pending ? ' local' : '') + '">' +
+    '<div class="faces">' + face(p.front, 'Front') + face(p.side, 'Side') + '</div>' +
+    '<div class="meat"><h3>' + esc(p.name || 'Unnamed') + '</h3>' +
+      '<div class="sub"><span>' + esc(p.role || 'No role given') + '</span>' + (time ? '<span>&middot; ' + esc(time) + '</span>' : '') + '</div>' +
+      (p.pending ? '<span class="pill warn"><span class="dot hold"></span>Not in the sheet</span>' : '') +
+      (p.consent === false ? '<span class="pill bad"><span class="dot air"></span>No consent recorded</span>' : '') +
+      '<div class="row"><select data-id="' + esc(p.guestId) + '" aria-label="Camera for ' + esc(p.name) + '">' + opts + '</select></div>' +
+    '</div></article>';
+}
+function paintCounts(){
+  const tally = {};
+  people.forEach((p) => { const k = p.camera || ''; tally[k] = (tally[k] || 0) + 1; });
+  $('camCount').innerHTML = Object.keys(CAMS).map((c) => '<dt>' + esc(CAMS[c]) + '</dt><dd>' + (tally[c] || 0) + '</dd>').join('');
+  const yes = people.filter((p) => p.consent !== false).length;
+  $('consentKv').innerHTML = '<dt>Agreed</dt><dd>' + yes + ' of ' + people.length + '</dd>' +
+    '<dt>Photos each</dt><dd>2</dd>';
+}
+
+/* ---- write a camera assignment back ---- */
+async function assign(guestId, camera){
+  if (!CFG.endpoint) return;
+  try {
+    await fetch(CFG.endpoint, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body:JSON.stringify({ type:'assign_camera', eventId:CFG.eventId, guestId, camera }), redirect:'follow' });
+  } catch {}
+}
+
+/* ---- keeping the data ---- */
+/* CSV works with nothing deployed at all, straight off whatever is on screen. */
+const CSV_COLS = ['name','role','guestId','camera','consent','submittedAt','front','side'];
+function csv(){
+  const cell = (v) => { const s = v == null ? '' : String(v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  return [CSV_COLS.join(',')].concat(people.map((p) => CSV_COLS.map((k) => cell(p[k])).join(','))).join('\r\n');
+}
+$('exportCsv').onclick = () => {
+  if (!people.length){ flash($('exportCsv'), 'Nothing to export yet'); return; }
+  /* BOM so Excel and Sheets both read the UTF-8 correctly */
+  const blob = new Blob(['﻿' + csv()], { type:'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'cue-participants-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-') + '.csv';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  flash($('exportCsv'), people.length + ' rows downloaded');
+};
+$('exportSheet').onclick = async () => {
+  if (!CFG.endpoint){ flash($('exportSheet'), 'Needs the sheet endpoint'); return; }
+  const btn = $('exportSheet'), was = btn.innerHTML;
+  btn.innerHTML = '<span class="spin"></span>Copying';
+  try {
+    const res = await fetch(CFG.endpoint, { method:'POST', headers:{ 'Content-Type':'text/plain;charset=utf-8' },
+      body:JSON.stringify({ type:'export_sheet', eventId:CFG.eventId }), redirect:'follow' });
+    const body = JSON.parse(await res.text());
+    if (!res.ok || body.ok === false || !body.url) throw new Error(body.error || ('HTTP ' + res.status));
+    btn.innerHTML = was;
+    flash($('exportSheet'), body.rows + ' rows copied');
+    window.open(body.url, '_blank', 'noopener');
+  } catch (e) {
+    btn.innerHTML = was;
+    flash($('exportSheet'), 'Export failed: ' + String((e && e.message) || e).slice(0, 40));
+  }
+};
+
+$('refresh').onclick = load;
+$('auto').onclick = () => {
+  if (timer){ clearInterval(timer); timer = null; $('auto').classList.remove('on'); return; }
+  timer = setInterval(load, Math.max(5000, CFG.pollMs)); $('auto').classList.add('on'); load();
+};
+$('auto').click();
+</script>
+</body>
+</html>

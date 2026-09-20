@@ -44,6 +44,7 @@ button:focus-visible{outline:2px solid #fff;outline-offset:3px}
 .pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;background:var(--raised);color:var(--soft);font-size:11px;font-weight:500;white-space:nowrap}
 .pill.live{background:rgba(255,77,79,.16);color:#ff8f90}
 .pill.cue{background:rgba(167,139,250,.16);color:#c9b8ff}
+.pill.nav{text-decoration:none}.pill.nav:hover{background:var(--hover);color:var(--text)}
 .top .mode{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--soft);font-weight:500;white-space:nowrap}
 
 /* layout */
@@ -179,6 +180,7 @@ body.manual .ctl.main .ic{background:var(--hold);color:#1c1300}
     <h1>CUE</h1>
     <span class="pill live"><span class="dot air blink"></span>Live <span id="clock">00:00</span></span>
     <span class="pill" id="sourceChip" hidden></span>
+    <a class="pill nav" href="/static/dashboard.html">Participants &#8599;</a>
     <div class="mode"><span class="dot ready" id="modeDot"></span><span id="modeText">CUE is directing</span></div>
   </header>
 
@@ -234,10 +236,12 @@ body.manual .ctl.main .ic{background:var(--hold);color:#1c1300}
   </main>
 </div>
 
+<script src="/static/config.js" onerror="void 0"></script>
 <script>
 /* CUE desk v4. Server wiring lives in three marked places only. */
 const CAMS = { 'CAM-HOST':'Host camera', 'CAM-GUEST':'Guest camera', 'CAM-WIDE':'Wide shot' };
 const ROSTER = { sarah:'Sarah Tan', daniel:'Daniel Reyes', priya:'Priya Shah' };
+const SHORTCAM = { 'CAM-HOST':'Host cam', 'CAM-GUEST':'Guest cam', 'CAM-WIDE':'Wide' };
 const WHEN = { NOW:'Right now', FUTURE:'Later', PAST:'Already happened', NEGATED:'Told not to', UNCERTAIN:'Not clear' };
 const SCOPE = { single:'One person', group:'A group', role:'A role', none:'Nobody' };
 const CHALLENGES = [
@@ -249,7 +253,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'
 const clockStr = (d) => d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
 const mmss = (ms) => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 const state = { live:'CAM-HOST', prev:null, next:null, liveSince:Date.now(), mode:'auto', sug:null, heardOnce:false, directing:true,
-  decisions:[], feed:[], shown:null, lastHost:null, pending:null, names:Object.keys(ROSTER), cams:{}, started:Date.now(), ws:null };
+  decisions:[], feed:[], shown:null, lastHost:null, pending:null, names:Object.keys(ROSTER), cams:{}, camGuests:{}, started:Date.now(), ws:null };
 function markNames(text){ let h = esc(text); state.names.forEach((n) => { if (n) h = h.replace(new RegExp('\\b(' + n.replace(/[^a-z]/gi, '') + ')\\b', 'gi'), '<mark>$1</mark>'); }); return h; }
 
 const CUE = window.CUE = {
@@ -276,7 +280,16 @@ const CUE = window.CUE = {
     if (k.length) state.names = [...new Set(k.map((n) => String(n).toLowerCase().split(' ')[0]))]; },
   setLatency(lat){ const f = lat && lat.first_ms, e = lat && lat.final_ms; $('stFirst').textContent = f != null ? Math.round(f) + ' ms' : '-'; $('stFinal').textContent = e != null ? Math.round(e) + ' ms' : '-';
     $('dgSpeed').textContent = f != null ? 'first word ' + Math.round(f) + ' ms' : '-'; },
-  setRoster(list){ $('roster').innerHTML = (list || []).slice(0, 6).map((g) => '<dt>' + esc(g.name || g) + '</dt><dd>' + esc(g.role || '') + '</dd>').join(''); },
+  setRoster(list){ const gs = (list || []).map((g) => (typeof g === 'string' ? { name:g } : g));
+    $('roster').innerHTML = gs.slice(0, 8).map((g) => '<dt>' + esc(g.name || '') + '</dt><dd>' +
+      esc([g.role || '', SHORTCAM[g.camera] || ''].filter(Boolean).join(' · ')) + '</dd>').join('') || '<dt>Nobody yet</dt><dd>-</dd>';
+    /* who is on which camera, so the tiles say a name instead of just "Guest" */
+    state.camGuests = {}; gs.forEach((g) => { if (!g.camera || !CAMS[g.camera]) return;
+      const first = String(g.name || '').trim().split(' ')[0]; if (!first) return;
+      state.camGuests[g.camera] = state.camGuests[g.camera] ? state.camGuests[g.camera] + ', ' + first : first; });
+    const firsts = gs.map((g) => String(g.name || '').toLowerCase().split(' ')[0]).filter(Boolean);
+    state.names = [...new Set(state.names.concat(firsts))];
+    paintCams(); },
   addDeepgramResult(r){ if (!r || !r.text) return; const box = $('pDg'); if (box.querySelector('.empty')) box.innerHTML = '';
     const words = (r.words && r.words.length ? r.words : r.text.split(' ').map((w) => ({ word:w }))).map((w) => { const t = markNames(w.punctuated_word || w.word);
       return (w.confidence != null && w.confidence < 0.8) ? '<span class="low">' + t + '</span>' : t; }).join(' ');
@@ -319,7 +332,7 @@ function paintMode(){ const m = state.mode; document.body.classList.toggle('manu
   $('cMainLabel').textContent = m === 'manual' ? 'Let CUE direct' : 'Take over'; $('cSuggest').classList.toggle('on', m === 'assist'); }
 function paintCams(){ document.querySelectorAll('.cam').forEach((t) => { const cam = t.dataset.cam, info = state.cams[cam] || {}, on = cam === state.live, nx = cam === state.next, bad = info.ready === false;
   t.classList.toggle('on', on); t.classList.toggle('next', nx && !on); t.classList.toggle('bad', bad && !on);
-  t.querySelector('.dot').className = 'dot ' + (on ? 'air' : bad ? 'hold' : 'ready'); t.querySelector('small').textContent = on ? 'On air' : nx ? 'Next up' : bad ? 'Not ready' : (info.note || 'Ready'); }); }
+  t.querySelector('.dot').className = 'dot ' + (on ? 'air' : bad ? 'hold' : 'ready'); t.querySelector('small').textContent = on ? 'On air' : nx ? 'Next up' : bad ? 'Not ready' : ([state.camGuests[cam], info.note].filter(Boolean).join(' · ') || 'Ready'); }); }
 function paintScore(){ const c = (k) => state.decisions.filter((d) => d.kind === k).length; $('sCut').textContent = c('cut') + c('wide'); $('sStay').textContent = c('stay'); $('sYou').textContent = c('you');
   const r = state.decisions.filter((d) => d.rated != null); $('sRight').textContent = r.length ? r.filter((d) => d.rated).length + ' of ' + r.length : '-'; }
 function hostSaid(text){ state.lastHost = { text, at:Date.now() }; pushFeed({ who:'host', text }); if (state.directing && state.mode !== 'manual'){ $('typing').classList.add('show'); clearTimeout(state.typeT); state.typeT = setTimeout(() => $('typing').classList.remove('show'), 4000); }
@@ -385,7 +398,8 @@ function onServerMessage(m){ const t = m.type || m.event;
   else if (t === 'source') CUE.setSource(m.source); else if (t === 'directing') CUE.setDirecting(m.enabled);
   else if (t === 'caption_status') CUE.setCaptionStatus(!!m.connected, m.label);
   else if (t === 'deepgram_config') CUE.setDeepgramConfig(m.config || m); else if (t === 'deepgram_result') CUE.addDeepgramResult(m.result || m);
-  else if (t === 'latency') CUE.setLatency(m.latency || m); else if (t === 'roster') CUE.setRoster(m.guests || m.roster);
+  else if (t === 'latency') CUE.setLatency(m.latency || m);
+  else if (t === 'roster'){ stopSignupBridge(); CUE.setRoster(m.guests || m.roster); }
   else if (t === 'prepare') CUE.setNext(m.camera || m.camera_id); else if (t === 'stand_down') CUE.setNext(null);
   else if (t === 'camera_state') CUE.setCameraState(m.camera || m.camera_id, { ready:m.ready, note:m.note });
   else if (t === 'mic_level') CUE.setMicLevel(Number(m.level) || 0); }
@@ -409,6 +423,30 @@ let demoOn = false; async function demo(){ if (demoOn) return; demoOn = true; CU
     ['Please welcome Sarah and Daniel.', { action:'TAKE', camera_id:'CAM-WIDE', who:['sarah','daniel'], when:'NOW', scope:'group', plain_reason:'Two people at once, so the wide shot.' }],
     ['Thank you both. Back to me.', { action:'TAKE', camera_id:'CAM-HOST', who:[], when:'NOW', scope:'none', plain_reason:'The host took the focus back.' }] ];
   while (true){ for (const [text, rec] of beats){ if (state.mode === 'manual' || state.sug){ await wait(900); continue; } await say(text); CUE.addDecision(Object.assign({ heard:text }, rec)); await wait(2600); } await wait(1500); } }
+
+/* Sign-up bridge. signup.html writes to a Google Sheet, and a sheet cannot push,
+   so the desk pulls: a guest who presses Send shows up here within one interval.
+   A `roster` message from the server always wins and stops the polling - the
+   backend is the authoritative source, this is only the gap-filler. */
+const SIGNUP = Object.assign({ endpoint:'', eventId:'', deskPollMs:4000 }, window.CUE_SIGNUP || {});
+let bridgeTimer = null, bridgeStopped = false;
+function stopSignupBridge(){ bridgeStopped = true; if (bridgeTimer){ clearInterval(bridgeTimer); bridgeTimer = null; } }
+async function pollSignups(){
+  if (!SIGNUP.endpoint || bridgeStopped) return;
+  try {
+    const url = SIGNUP.endpoint + (SIGNUP.endpoint.includes('?') ? '&' : '?') + 'action=roster' +
+      (SIGNUP.eventId ? '&eventId=' + encodeURIComponent(SIGNUP.eventId) : '');
+    const body = await (await fetch(url, { redirect:'follow' })).json();
+    if (body && body.ok !== false && Array.isArray(body.participants)) CUE.setRoster(body.participants);
+  } catch {}
+}
+if (SIGNUP.endpoint){
+  pollSignups();
+  bridgeTimer = setInterval(pollSignups, Math.max(2000, SIGNUP.deskPollMs));
+  /* coming back to the tab should not wait out the interval */
+  addEventListener('visibilitychange', () => { if (!document.hidden) pollSignups(); });
+  addEventListener('focus', pollSignups);
+}
 
 paintMode(); paintCams(); paintTry(); idleCaption(); connect();
 </script>

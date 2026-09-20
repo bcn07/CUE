@@ -7,3 +7,4 @@ data/
 dist/
 .pytest_cache/
 reports/llm_eval_*.json
+server/static/config.js

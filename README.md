@@ -408,5 +408,20 @@ first-word latency is measured, so that row stays empty; decisions are read
 from the ~4 Hz state snapshot, so two decisions inside one tick show as the
 later one.
 
+The desk's two sibling pages are served too: `/static/dashboard.html` (the
+production team's participant list with camera assignment) and
+`/static/signup.html` (a guest's name, two photos and consent). Both talk to
+the Google Apps Script web app described in the cue-desk-ui README, not to this
+server; copy `server/static/config.example.js` to `server/static/config.js`
+and paste the deployed `/exec` URL there. That file is gitignored because the
+URL is a capability: anyone holding it can write to the sheet. Guests' phones
+need HTTPS for the camera, so host `signup.html` on a static host or a tunnel
+you choose to expose; this server does not expose `/static` through the tunnel.
+
+The roster the desk shows comes from this director (the people and camera
+assignments on `/setup`), so each guest's tile shows their name once a camera
+has a fixed person. Sign-ups that land in the sheet do not enrol themselves
+here; someone adds them on `/setup`.
+
 The `/ui` protocol is unchanged; the adapter subscribes to the same fan-out.
 Tests: `tests/test_desk_ws.py`.

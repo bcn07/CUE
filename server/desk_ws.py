@@ -215,6 +215,23 @@ def pending_camera(snapshot: dict, cmap: dict[str, str]) -> str | None:
     return None
 
 
+def roster_message(snapshot: dict, cmap: dict[str, str]) -> dict:
+    """The desk's roster: name, role, and which desk camera the person is assigned to."""
+    by_person: dict[str, str] = {}
+    for cid, cam in (snapshot.get("cameras") or {}).items():
+        person = cam.get("fixed_person")
+        if person and cid in cmap and person not in by_person:
+            by_person[person] = cmap[cid]
+    guests = []
+    for p in snapshot.get("roster") or []:
+        entry = {"name": p.get("name"), "role": "Host" if p.get("is_host") else (p.get("role") or "Guest")}
+        camera = by_person.get(p.get("id"))
+        if camera:
+            entry["camera"] = camera
+        guests.append(entry)
+    return {"type": "roster", "guests": guests}
+
+
 def on_connect_messages(snapshot: dict, cmap: dict[str, str]) -> list[dict]:
     dg = _deepgram(snapshot)
     roster = snapshot.get("roster") or []
@@ -232,13 +249,7 @@ def on_connect_messages(snapshot: dict, cmap: dict[str, str]) -> list[dict]:
             "label": f"Deepgram {dg.get('model')}" if dg.get("configured") else "No Deepgram key: typed lines only",
         },
         {"type": "deepgram_config", "model": dg.get("model"), "keyterms": keyterms},
-        {
-            "type": "roster",
-            "guests": [
-                {"name": p.get("name"), "role": "Host" if p.get("is_host") else (p.get("role") or "Guest")}
-                for p in roster
-            ],
-        },
+        roster_message(snapshot, cmap),
         {"type": "mode", "mode": snapshot_mode(snapshot)},
     ]
     for desk, info in camera_states(snapshot, cmap).items():
@@ -290,6 +301,9 @@ def diff_messages(prev: dict | None, cur: dict, cmap: dict[str, str]) -> list[di
             msgs.append({"type": "prepare", "camera": cam})
     elif had and not has:
         msgs.append({"type": "stand_down"})
+
+    if prev and roster_message(prev, camera_map(prev.get("cameras") or {})) != roster_message(cur, cmap):
+        msgs.append(roster_message(cur, cmap))
 
     if _suggestion_key(prev) != _suggestion_key(cur):
         sug = suggestion_record(cur, cmap)

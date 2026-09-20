@@ -71,6 +71,8 @@ def test_on_connect_sends_the_whole_contract_head():
     assert msgs["source"]["source"] == "mic"
     assert msgs["deepgram_config"]["keyterms"] == ["Brian", "Sarah Tan", "Sara"]
     assert msgs["roster"]["guests"][0] == {"name": "Brian", "role": "Host"}
+    # Sarah is the fixed person on camera C, the guest camera, so the desk tile can show her name.
+    assert msgs["roster"]["guests"][1] == {"name": "Sarah Tan", "role": "guest of honour", "camera": "CAM-GUEST"}
     assert dw.on_connect_messages(snap(services={"deepgram": {"configured": False}}), CMAP)[0]["source"] == "fixture"
 
 
@@ -193,3 +195,12 @@ def test_suggestion_appearing_and_clearing_emits_prepare_and_stand_down_once_eac
     # A changed suggestion (new state_version) is a new card.
     c = snap(assist=True, suggestion={**SUG, "camera_id": "A", "state_version": 8})
     assert next(m for m in dw.diff_messages(b, c, CMAP) if m["type"] == "prepare")["camera"] == "CAM-WIDE"
+
+
+def test_roster_is_resent_when_a_camera_assignment_changes():
+    a = snap()
+    b = snap(cameras={**CAMS, "A": {**CAMS["A"], "fixed_person": "sarah"}, "C": {**CAMS["C"], "fixed_person": None}})
+    rosters = [m for m in dw.diff_messages(a, b, CMAP) if m["type"] == "roster"]
+    assert len(rosters) == 1
+    assert next(g for g in rosters[0]["guests"] if g["name"] == "Sarah Tan")["camera"] == "CAM-WIDE"
+    assert not [m for m in dw.diff_messages(b, b, CMAP) if m["type"] == "roster"]
