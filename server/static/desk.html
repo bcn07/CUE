@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CUE desk (director) - CUE live desk</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --page:#07080a; --shell:#101114; --surface:#17181c; --raised:#1f2026; --hover:#282a31;
+  --line:rgba(255,255,255,.07); --text:#f2f3f5; --soft:#c5c7ce; --muted:#8b8e98;
+  --air:#ff4d4f; --ready:#34d27b; --hold:#ffb224; --wide:#5aa9ff; --cue:#a78bfa;
+  --font:"Poppins","Segoe UI",system-ui,sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;height:100dvh;overflow:hidden;background:var(--page);color:var(--text);font:400 12px/1.4 var(--font);
+  font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased;padding:12px;position:relative}
+button{font:inherit;color:inherit;border:0;background:none;padding:0;cursor:pointer}
+button:focus-visible{outline:2px solid #fff;outline-offset:3px}
+/* drifting glows behind the shell: the only ambient motion */
+.glow{position:fixed;width:60vw;height:60vw;border-radius:50%;filter:blur(90px);opacity:.2;pointer-events:none;z-index:0}
+.glow.a{background:var(--cue);top:-32vw;right:-18vw;animation:drift 38s ease-in-out infinite alternate}
+.glow.b{background:var(--air);bottom:-38vw;left:-22vw;opacity:.11;animation:drift 46s ease-in-out infinite alternate-reverse}
+@keyframes drift{to{transform:translate(-6vw,5vw) scale(1.08)}}
+
+.shell{position:relative;z-index:1;height:100%;background:linear-gradient(180deg,#141519 0%,var(--shell) 42%,var(--shell) 100%);
+  border:1px solid var(--line-strong,rgba(255,255,255,.10));border-radius:16px;padding:14px;
+  display:grid;grid-template-rows:40px minmax(0,1fr);gap:11px;
+  box-shadow:0 40px 90px -30px rgba(0,0,0,.85), 0 18px 40px -14px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.02) inset;
+  overflow:hidden}
+.shell::before{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.14) 20%,rgba(255,255,255,.14) 80%,transparent);pointer-events:none;z-index:2}
+.shell::after{content:"";position:absolute;top:36px;right:14px;width:60px;height:22px;pointer-events:none;opacity:.35;background-image:radial-gradient(rgba(255,255,255,.4) 1px,transparent 1.4px);background-size:8px 8px;background-position:0 0;mask-image:linear-gradient(90deg,transparent,#000 40%,#000 100%);-webkit-mask-image:linear-gradient(90deg,transparent,#000 40%,#000 100%)}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--muted)}
+.dot.air{background:var(--air)}.dot.ready{background:var(--ready)}.dot.hold{background:var(--hold)}.dot.cue{background:var(--cue)}
+.blink{animation:blink 1.2s steps(2,jump-none) infinite}@keyframes blink{50%{opacity:.25}}
+
+/* header */
+.top{display:flex;align-items:center;gap:11px;min-width:0}
+.logo{width:26px;height:26px;flex:none}
+.top h1{margin:0;font-size:15px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.pill{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:999px;background:var(--raised);color:var(--soft);font-size:11px;font-weight:500;white-space:nowrap}
+.pill.live{background:rgba(255,77,79,.16);color:#ff8f90}
+.pill.cue{background:rgba(167,139,250,.16);color:#c9b8ff}
+.pill.nav{text-decoration:none}.pill.nav:hover{background:var(--hover);color:var(--text)}
+.top .mode{margin-left:auto;display:flex;align-items:center;gap:8px;color:var(--soft);font-weight:500;white-space:nowrap}
+
+/* layout */
+.main{min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 336px;gap:12px}
+.left{min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto auto;gap:10px}
+
+/* programme */
+.stage{position:relative;min-height:0;border-radius:20px;overflow:hidden;background:#000}
+video,canvas{width:100%;height:100%;object-fit:cover;display:block;background:#050506}
+.stage video.cut,.stage canvas.cut{animation:cut .16s ease-out}@keyframes cut{from{opacity:.2}to{opacity:1}}
+.glass{background:rgba(14,15,18,.62);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.onair{position:absolute;top:14px;left:14px;display:flex;align-items:center;gap:9px;height:34px;padding:0 14px 0 12px;border-radius:12px;font-weight:500}
+.onair b{font-weight:600}.onair span{color:var(--soft)}
+.onair i{font-style:normal;color:var(--muted);margin-left:2px}.onair i.long{color:var(--hold)}
+.dgchip{position:absolute;top:14px;right:14px;display:flex;align-items:center;gap:8px;height:34px;padding:0 13px;border-radius:12px;font-size:12px;color:var(--soft)}
+.nextchip{position:absolute;top:56px;left:14px;display:none;align-items:center;gap:8px;height:28px;padding:0 12px;border-radius:10px;font-size:12px;color:#8ff0bb}
+.armed .nextchip{display:flex}
+.alarm{position:absolute;top:56px;left:50%;transform:translateX(-50%);display:none;padding:9px 16px;border-radius:12px;background:var(--air);color:#fff;font-weight:600;white-space:nowrap}
+.deaf .alarm{display:block}
+.held{position:absolute;top:14px;left:50%;transform:translate(-50%,-6px);padding:7px 14px;border-radius:999px;background:var(--hold);color:#1c1300;font-weight:600;font-size:12px;opacity:0;transition:.16s ease;pointer-events:none}
+.held.show{opacity:1;transform:translate(-50%,0)}
+/* caption: centred over the bottom of the picture, like live TV subtitles */
+.cap{position:absolute;left:50%;bottom:14px;transform:translateX(-50%);max-width:min(94%,1200px);display:flex;align-items:center;gap:12px;
+  padding:6px 14px;border-radius:12px;font-size:clamp(10px,.85vw,13px);font-weight:500;line-height:1.3;text-align:center}
+mark{background:rgba(167,139,250,.3);color:inherit;border-radius:5px;padding:0 4px}
+.cap .soft{color:#b9bbc4}
+.cap.idle{font-size:11px;font-weight:400;color:var(--soft)}
+.eq{display:flex;align-items:center;gap:2.5px;height:16px;flex:none}
+.eq i{width:3px;height:4px;border-radius:2px;background:rgba(255,255,255,.55);transition:height .07s linear,background .2s}
+.eq.talk i{background:var(--cue)}
+.suggest{position:absolute;left:50%;bottom:70px;transform:translateX(-50%);width:min(88%,760px);display:none;align-items:center;gap:10px;
+  padding:10px 10px 10px 16px;border-radius:14px;background:var(--cue);color:#160b33;font-weight:500;overflow:hidden}
+.suggest.show{display:flex}.suggest span{margin-right:auto;min-width:0}
+.suggest button{height:34px;padding:0 14px;border-radius:10px;font-weight:600;font-size:12px;white-space:nowrap;background:#160b33;color:#fff}
+.suggest button.skip{background:rgba(22,11,51,.14);color:#160b33}
+.suggest em{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#160b33;transform-origin:left;animation:drain 6s linear forwards}
+@keyframes drain{to{transform:scaleX(0)}}
+.nofeed{position:absolute;inset:0;display:none;place-items:center;color:var(--muted)}.nocam .nofeed{display:grid}
+
+/* camera row, under the main picture */
+.cams{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.cam{position:relative;border-radius:14px;overflow:hidden;background:#000;aspect-ratio:16/9;max-height:16vh;width:100%;
+  outline:2px solid transparent;outline-offset:-2px;transition:outline-color .15s}
+.cam:hover{outline-color:rgba(255,255,255,.35)}
+.cam.on{outline-color:var(--air)}.cam.next{outline-color:var(--ready);animation:ring 1.6s ease-in-out infinite}
+.cam.bad{opacity:.6}
+@keyframes ring{50%{outline-color:rgba(52,210,123,.35)}}
+.cam.pulse{animation:pulse .32s ease-out}@keyframes pulse{50%{transform:scale(1.025)}}
+.cam .who{position:absolute;left:10px;bottom:10px;display:flex;align-items:center;gap:8px;height:28px;padding:0 11px;border-radius:9px;font-size:12px;font-weight:500;max-width:calc(100% - 20px)}
+.cam .who small{font-size:11px;color:var(--soft);font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cam .key{position:absolute;top:10px;right:10px;width:24px;height:24px;border-radius:8px;display:grid;place-items:center;font-size:11px;font-weight:600}
+
+/* controls, round buttons with labels like a call bar */
+.bar{display:flex;align-items:flex-start;justify-content:center;gap:22px;padding-top:2px}
+.ctl{display:flex;flex-direction:column;align-items:center;gap:5px;width:68px;color:var(--soft);font-size:10px;font-weight:500;text-align:center;line-height:1.2}
+.ctl .ic{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;background:var(--raised);border:1px solid var(--line);transition:background .15s}
+.ctl:hover .ic{background:var(--hover)}.ctl svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ctl.on .ic{background:var(--cue);color:#160b33;border-color:transparent}
+.ctl.main .ic{width:44px;height:44px;background:var(--text);color:var(--page);border-color:transparent;margin-top:-3px}
+.ctl.main{color:var(--text);font-weight:600}
+body.manual .ctl.main .ic{background:var(--hold);color:#1c1300}
+.ctl[disabled]{opacity:.35;cursor:default}
+.bar{gap:14px}
+
+/* right panel */
+.panel{min-height:0;min-width:0;grid-template-columns:minmax(0,1fr);background:var(--surface);border:1px solid var(--line);border-radius:20px;display:grid;grid-template-rows:auto auto minmax(0,1fr) auto;overflow:hidden}
+.panel>*{min-width:0}
+.phead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 14px 10px}
+.tabs{display:flex;gap:4px;padding:3px;border-radius:999px;background:var(--raised)}
+.tab{height:28px;padding:0 13px;border-radius:999px;font-size:12px;font-weight:500;color:var(--muted)}
+.tab.on{background:var(--hover);color:var(--text)}
+.dgline{margin:0 14px 10px;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:10px 12px;border-radius:12px;background:var(--raised);font-size:12px}
+.dgline b{font-weight:600}.dgline span{color:var(--muted);text-align:right}
+.pane{min-height:0;display:none;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent;padding:2px 14px 12px}
+.pane::-webkit-scrollbar{width:6px;height:6px}.pane::-webkit-scrollbar-thumb{background:rgba(255,255,255,.18);border-radius:3px}.pane::-webkit-scrollbar-track{background:transparent}
+.pane.on{display:block}
+.empty{color:var(--muted);margin:8px 2px}
+/* chat */
+.msg{display:grid;grid-template-columns:30px minmax(0,1fr);gap:10px;margin-top:12px;animation:rise .18s ease-out}
+@keyframes rise{from{opacity:0;transform:translateY(6px)}}
+.av{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:11px;font-weight:600;background:var(--raised);color:var(--soft)}
+.msg.cue .av{background:var(--cue);color:#160b33}
+.msg .meta{display:flex;gap:8px;align-items:baseline;font-size:11px;color:var(--muted);margin-bottom:4px}
+.msg .meta b{font-weight:600;color:var(--soft)}.msg.cue .meta b{color:#c9b8ff}
+.msg>div{min-width:0}
+.bub{display:inline-block;max-width:100%;overflow-wrap:anywhere;padding:9px 13px;border-radius:4px 14px 14px 14px;background:var(--raised);color:var(--text)}
+.msg.cue .bub{background:rgba(167,139,250,.14)}
+.msg.cue.sel .bub{box-shadow:inset 0 0 0 1.5px rgba(167,139,250,.7)}
+.bub strong{display:flex;align-items:center;gap:7px;font-weight:600;margin-bottom:2px}
+.bub p{margin:0;color:var(--soft)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chips span{padding:3px 9px;border-radius:999px;background:rgba(255,255,255,.07);font-size:11px;color:var(--soft)}
+.chips span b{font-weight:500;color:var(--text)}
+.rate{display:flex;gap:6px;margin-top:8px}
+.rate button{height:26px;padding:0 10px;border-radius:8px;font-size:11px;font-weight:500;color:var(--soft);background:rgba(255,255,255,.07)}
+.rate button:hover{color:var(--text)}.rate .yes.on{background:var(--ready);color:#04230f}.rate .no.on{background:var(--air);color:#fff}
+.msg.you{grid-template-columns:minmax(0,1fr);justify-items:end}
+.msg.you .bub{border-radius:14px 4px 14px 14px;background:#2b4fd8;color:#fff}
+.msg.you .meta{justify-content:flex-end}
+.typing{display:none;align-items:center;gap:8px;margin:12px 2px 0;color:var(--muted);font-size:12px}
+.typing.show{display:flex}
+.typing i{width:5px;height:5px;border-radius:50%;background:var(--cue);animation:bounce 1s infinite}
+.typing i:nth-child(2){animation-delay:.15s}.typing i:nth-child(3){animation-delay:.3s}
+@keyframes bounce{30%{transform:translateY(-4px)}}
+/* deepgram + status panes */
+.dgrow{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:10px;align-items:baseline;padding:9px 2px;border-top:1px solid var(--line)}
+.dgrow:first-child{border-top:0}
+.dgrow .tag{font-size:11px;font-weight:600;color:var(--muted)}.dgrow .tag.end{color:var(--ready)}
+.dgrow p{margin:0}.dgrow.interim p{color:var(--muted)}
+.dgrow .low{text-decoration:underline dotted var(--hold);text-underline-offset:3px}
+
+.dgrow time{font-size:11px;color:var(--muted)}
+.sec{margin:14px 2px 6px;font-size:12px;font-weight:600}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 2px}
+.kv dt{color:var(--muted);white-space:nowrap}.kv dd{margin:0;font-weight:500;text-align:right;overflow-wrap:anywhere;min-width:0}
+/* try these: sits where a chat input would be */
+.try{border-top:1px solid var(--line);padding:7px 14px 9px}
+.try p{margin:0 0 5px;font-size:10.5px;color:var(--muted)}
+.try div{display:flex;gap:6px;overflow:auto;scrollbar-width:none}.try div::-webkit-scrollbar{display:none}
+.try span{flex:none;padding:6px 11px;border-radius:999px;background:var(--raised);font-size:11.5px;color:var(--soft);white-space:nowrap}
+.try span.pass{background:rgba(52,210,123,.16);color:#8ff0bb}.try span.fail{background:rgba(255,77,79,.16);color:#ff9d9e}
+
+@media (max-height:760px){.ctl .ic{width:40px;height:40px}.ctl.main .ic{width:46px;height:46px}.shell{padding:14px;gap:10px}.left{gap:10px}}
+@media (max-width:1050px){body{height:auto;overflow:auto}.shell{height:auto}.main{grid-template-columns:1fr}.stage{aspect-ratio:16/9}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="glow a"></div><div class="glow b"></div>
+<div class="shell">
+  <header class="top">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="12.5" fill="none" stroke="#a78bfa" stroke-width="3.2"></circle><circle cx="16" cy="16" r="4.4" fill="#fff"></circle></svg>
+    <h1>CUE</h1>
+    <span class="pill live"><span class="dot air blink"></span>Live <span id="clock">00:00</span></span>
+    <span class="pill" id="sourceChip" hidden></span>
+    <a class="pill nav" href="/static/dashboard.html">Participants &#8599;</a>
+    <div class="mode"><span class="dot ready" id="modeDot"></span><span id="modeText">CUE is directing</span></div>
+  </header>
+
+  <main class="main">
+    <section class="left">
+      <div class="stage" id="stage">
+        <canvas id="pgm" width="1280" height="720"></canvas>
+        <div class="nofeed">Allow the camera to see the live picture.</div>
+        <div class="onair glass"><span class="dot air blink"></span><span>On air</span><b id="pgmName">Host camera</b><i id="shot">0:00</i></div>
+        <div class="nextchip glass"><span class="dot ready"></span>Next up: <b id="nextName" style="font-weight:600"></b></div>
+        <div class="dgchip glass"><span class="dot" id="capDot"></span><span id="capText">Deepgram</span></div>
+        <div class="alarm">CUE cannot hear the host. You are directing.</div>
+        <div class="held" id="held"></div>
+        <div class="suggest" id="suggest"><span id="sugText"></span><button type="button" id="sugYes">Take it · Space</button><button type="button" class="skip" id="sugNo">Skip · Esc</button><em id="sugBar"></em></div>
+        <div class="cap glass idle" id="cap"><div class="eq" id="eq"><i></i><i></i><i></i><i></i><i></i></div><span id="capLine">Listening for the host</span></div>
+      </div>
+
+      <div class="cams">
+        <button class="cam on" type="button" data-cam="CAM-HOST" aria-label="Take the host camera"><canvas width="1280" height="720"></canvas><span class="who glass"><i class="dot air"></i><b style="font-weight:500">Host</b><small></small></span><span class="key glass">1</span></button>
+        <button class="cam" type="button" data-cam="CAM-GUEST" aria-label="Take the guest camera"><canvas width="1280" height="720"></canvas><span class="who glass"><i class="dot ready"></i><b style="font-weight:500">Guest</b><small></small></span><span class="key glass">2</span></button>
+        <button class="cam" type="button" data-cam="CAM-WIDE" aria-label="Take the wide shot"><canvas width="1280" height="720"></canvas><span class="who glass"><i class="dot ready"></i><b style="font-weight:500">Wide</b><small></small></span><span class="key glass">3</span></button>
+      </div>
+
+      <div class="bar">
+        <button class="ctl" id="cBack" type="button" title="Backspace" disabled><span class="ic"><svg viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"></path><path d="M4 9h10a6 6 0 0 1 0 12h-3"></path></svg></span><span class="lb">Last shot</span></button>
+        <button class="ctl" id="cWide" type="button" title="W"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"></rect><path d="M8 10v4M16 10v4"></path></svg></span><span class="lb">Wide shot</span></button>
+        <button class="ctl main" id="cMain" type="button" title="H to take over, A to hand back"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.6"></circle><path d="M4.5 20c1.2-4 4-6 7.5-6s6.300 2 7.500 6"></path></svg></span><span class="lb" id="cMainLabel">Take over</span></button>
+        <button class="ctl" id="cSuggest" type="button" title="S"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0-3.6 10.8c.6.5 1 1.2 1 2V17h5.200v-1.200c0-.8.4-1.500 1-2A6 6 0 0 0 12 3Z"></path><path d="M10 21h4"></path></svg></span><span class="lb">Suggest</span></button>
+        <button class="ctl" id="cStatus" type="button"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 19V10M10 19V5M16 19v-7M22 19H2"></path></svg></span><span class="lb">Status</span></button>
+      </div>
+    </section>
+
+    <aside class="panel">
+      <div class="phead">
+        <span class="pill cue"><span class="dot cue"></span>Live feed</span>
+        <div class="tabs"><button class="tab on" type="button" data-pane="pFeed">Feed</button><button class="tab" type="button" data-pane="pDg">Deepgram</button><button class="tab" type="button" data-pane="pStatus">Status</button></div>
+      </div>
+      <div class="dgline"><span class="dot" id="dgDot"></span><b id="dgModel">Deepgram</b><span id="dgSpeed">-</span></div>
+      <div style="min-height:0;display:grid">
+        <div class="pane on" id="pFeed"><p class="empty">The host speaks, CUE answers. It reads like a chat.</p><div id="feed"></div><div class="typing" id="typing"><i></i><i></i><i></i>CUE is thinking</div></div>
+        <div class="pane" id="pDg"><p class="empty">Raw results from Deepgram: early guesses, then the finished sentence.</p></div>
+        <div class="pane" id="pStatus">
+          <div class="sec">Speech to text</div>
+          <dl class="kv"><dt>Model</dt><dd id="stModel">-</dd><dt>Sentence ends after</dt><dd id="stEnd">-</dd><dt>Names boosted</dt><dd id="stNames">-</dd><dt>First word</dt><dd id="stFirst">-</dd><dt>Sentence final</dt><dd id="stFinal">-</dd><dt>Confidence</dt><dd id="stConf">-</dd></dl>
+          <div class="sec">This session</div>
+          <dl class="kv"><dt>Cuts by CUE</dt><dd id="sCut">0</dd><dt>Held back</dt><dd id="sStay">0</dd><dt>Your takes</dt><dd id="sYou">0</dd><dt>Right calls</dt><dd id="sRight">-</dd></dl>
+          <div class="sec">Guests</div>
+          <dl class="kv" id="roster"></dl>
+        </div>
+      </div>
+      <div class="try"><p id="tryHead">Try to fool it. Say one of these out loud.</p><div id="tryRow"></div></div>
+    </aside>
+  </main>
+</div>
+
+<script src="/static/config.js" onerror="void 0"></script>
+<script>
+/* CUE desk v4. Server wiring lives in three marked places only. */
+const CAMS = { 'CAM-HOST':'Host camera', 'CAM-GUEST':'Guest camera', 'CAM-WIDE':'Wide shot' };
+/* one-shot adapter: more than three cameras. Any camera id the server names gets a tile (CAM-GUEST-2 -> "Guest 2"). */
+function ensureTile(cam){ if (!cam || CAMS[cam]) return; const grid = document.querySelector('.cams'); if (!grid) return;
+  const name = cam.replace(/^CAM-/, '').toLowerCase().replace(/-/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+  CAMS[cam] = name + (/\d$/.test(name) ? '' : ' camera');
+  const b = document.createElement('button'); b.className = 'cam'; b.type = 'button'; b.dataset.cam = cam; b.setAttribute('aria-label', 'Take ' + name);
+  b.innerHTML = '<canvas width="1280" height="720"></canvas><span class="who glass"><i class="dot ready"></i><b style="font-weight:500"></b><small></small></span><span class="key glass"></span>';
+  b.querySelector('b').textContent = name; b.querySelector('.key').textContent = String(grid.children.length + 1); b.onclick = () => take(cam);
+  grid.appendChild(b); grid.style.gridTemplateColumns = 'repeat(' + grid.children.length + ',minmax(0,1fr))'; }
+const ROSTER = { sarah:'Sarah Tan', daniel:'Daniel Reyes', priya:'Priya Shah' };
+const SHORTCAM = { 'CAM-HOST':'Host cam', 'CAM-GUEST':'Guest cam', 'CAM-WIDE':'Wide' };
+const WHEN = { NOW:'Right now', FUTURE:'Later', PAST:'Already happened', NEGATED:'Told not to', UNCERTAIN:'Not clear' };
+const SCOPE = { single:'One person', group:'A group', role:'A role', none:'Nobody' };
+const CHALLENGES = [
+  { say:'Sarah joins us after the break.', want:'stay' }, { say:"Don't bring Sarah up yet.", want:'stay' }, { say:'Who is Sarah?', want:'stay' },
+  { say:'Sarah, please come up now.', want:'cut' }, { say:'Please welcome Sarah and Daniel.', want:'wide' }, { say:'Please welcome Sarah, actually, Daniel.', want:'cut' }
+].map((c) => Object.assign(c, { state:'' }));
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const clockStr = (d) => d.toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
+const mmss = (ms) => { const s = Math.floor(ms / 1000); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const state = { live:'CAM-HOST', prev:null, next:null, liveSince:Date.now(), mode:'auto', sug:null, heardOnce:false, directing:true,
+  decisions:[], feed:[], shown:null, lastHost:null, pending:null, names:Object.keys(ROSTER), cams:{}, camGuests:{}, started:Date.now(), ws:null };
+function markNames(text){ let h = esc(text); state.names.forEach((n) => { if (n) h = h.replace(new RegExp('\\b(' + n.replace(/[^a-z]/gi, '') + ')\\b', 'gi'), '<mark>$1</mark>'); }); return h; }
+
+const CUE = window.CUE = {
+  setSource(kind){ const c = $('sourceChip'); c.hidden = kind === 'mic'; c.textContent = kind === 'mic' ? '' : 'Scripted demo'; },
+  setDirecting(on){ state.directing = !!on; paintMode(); },
+  setCaptionStatus(ok, label){ if (ok) state.heardOnce = true; $('stage').classList.toggle('deaf', !ok && state.heardOnce);
+    $('capDot').className = $('dgDot').className = 'dot' + (ok ? ' ready' : ''); if (label) $('capText').textContent = label; },
+  setMicLevel(v){ const b = [...$('eq').children], talk = v > .12; $('eq').classList.toggle('talk', talk);
+    b.forEach((x, i) => { const k = [.55, .85, 1, .8, .5][i]; x.style.height = Math.max(4, Math.min(16, 4 + v * 26 * k * (0.7 + Math.random() * 0.6))) + 'px'; }); },
+  setCaption(text, isFinal){ const el = $('cap'); if (!text){ idleCaption(); return; }
+    el.classList.remove('idle'); $('capLine').innerHTML = isFinal ? markNames(text) : '<span class="soft">' + markNames(text) + '</span>';
+    if (isFinal){ hostSaid(text); clearTimeout(state.idleT); state.idleT = setTimeout(idleCaption, 6000); } },
+  setMode(mode){ mode = mode === 'hold' ? 'manual' : mode; if (!['manual','assist','auto'].includes(mode)) return; state.mode = mode;
+    if (mode !== 'assist') hideSuggestion(); if (mode === 'manual') CUE.setNext(null); paintMode(); },
+  setNext(cam){ ensureTile(cam); state.next = CAMS[cam] && cam !== state.live ? cam : null; $('stage').classList.toggle('armed', !!state.next); $('nextName').textContent = state.next ? CAMS[state.next] : ''; paintCams(); },
+  setCameraState(cam, info){ state.cams[cam] = Object.assign(state.cams[cam] || {}, info); paintCams(); },
+  setLive(cam){ ensureTile(cam); if (!CAMS[cam] || cam === state.live) return; state.prev = state.live; state.live = cam; state.liveSince = Date.now(); $('pgmName').textContent = CAMS[cam];
+    const v = $('pgm'); v.classList.remove('cut'); void v.offsetWidth; v.classList.add('cut'); $('cBack').disabled = false;
+    const t = document.querySelector('.cam[data-cam="' + cam + '"]'); t.classList.remove('pulse'); void t.offsetWidth; t.classList.add('pulse');
+    if (state.next === cam) CUE.setNext(null); else paintCams(); },
+  setDeepgramConfig(cfg){ cfg = cfg || {}; const model = cfg.model || '-'; $('dgModel').textContent = model; $('stModel').textContent = model; $('capText').textContent = 'Deepgram ' + model;
+    const end = cfg.endpointing_ms ?? cfg.endpointing ?? cfg.eot_timeout_ms; $('stEnd').textContent = end != null ? end + ' ms of silence' : '-';
+    const k = cfg.keyterms || cfg.keywords || []; $('stNames').textContent = k.length || '-';
+    if (k.length) state.names = [...new Set(k.map((n) => String(n).toLowerCase().split(' ')[0]))]; },
+  setLatency(lat){ const f = lat && lat.first_ms, e = lat && lat.final_ms; $('stFirst').textContent = f != null ? Math.round(f) + ' ms' : '-'; $('stFinal').textContent = e != null ? Math.round(e) + ' ms' : '-';
+    $('dgSpeed').textContent = f != null ? 'first word ' + Math.round(f) + ' ms' : '-'; },
+  setRoster(list){ const gs = (list || []).map((g) => (typeof g === 'string' ? { name:g } : g));
+    $('roster').innerHTML = gs.slice(0, 8).map((g) => '<dt>' + esc(g.name || '') + '</dt><dd>' +
+      esc([g.role || '', SHORTCAM[g.camera] || ''].filter(Boolean).join(' · ')) + '</dd>').join('') || '<dt>Nobody yet</dt><dd>-</dd>';
+    /* who is on which camera, so the tiles say a name instead of just "Guest" */
+    state.camGuests = {}; gs.forEach((g) => { ensureTile(g.camera); if (!g.camera || !CAMS[g.camera]) return;
+      const first = String(g.name || '').trim().split(' ')[0]; if (!first) return;
+      state.camGuests[g.camera] = state.camGuests[g.camera] ? state.camGuests[g.camera] + ', ' + first : first; });
+    const firsts = gs.map((g) => String(g.name || '').toLowerCase().split(' ')[0]).filter(Boolean);
+    state.names = [...new Set(state.names.concat(firsts))];
+    paintCams(); },
+  addDeepgramResult(r){ if (!r || !r.text) return; const box = $('pDg'); if (box.querySelector('.empty')) box.innerHTML = '';
+    const words = (r.words && r.words.length ? r.words : r.text.split(' ').map((w) => ({ word:w }))).map((w) => { const t = markNames(w.punctuated_word || w.word);
+      return (w.confidence != null && w.confidence < 0.8) ? '<span class="low">' + t + '</span>' : t; }).join(' ');
+    const kind = (r.speech_final || r.is_final) ? 'end' : 'interim', label = kind === 'end' ? 'Sentence' : 'Guess';
+    const html = '<span class="tag ' + kind + '">' + label + '</span><p>' + words + '</p><time>' + (r.confidence != null ? Math.round(r.confidence * 100) + '%' : '') + '</time>';
+    const last = box.firstElementChild, same = last && last.dataset.text === r.text;
+    if (last && (last.classList.contains('interim') || same)){ last.className = 'dgrow ' + kind; last.innerHTML = html; last.dataset.text = r.text; }
+    else { const row = document.createElement('div'); row.className = 'dgrow ' + kind; row.dataset.text = r.text; row.innerHTML = html; box.prepend(row); }
+    while (box.children.length > 40) box.lastElementChild.remove();
+    if (kind === 'end' && r.confidence != null) $('stConf').textContent = Math.round(r.confidence * 100) + '%'; },
+  addDecision(raw){ const d = normalize(raw); $('typing').classList.remove('show');
+    if (!d.heard && state.lastHost && Date.now() - state.lastHost.at < 8000) d.heard = state.lastHost.text;
+    if (state.mode === 'assist' && (d.kind === 'cut' || d.kind === 'wide') && !raw.accepted){ showSuggestion(d); return; }
+    if (d.kind === 'stay') CUE.setNext(null);
+    state.decisions.unshift(d); if (d.kind !== 'stay') CUE.setLive(d.camera);
+    if (d.kind === 'you' && state.mode === 'auto') CUE.setMode('manual');
+    if (d.kind === 'stay'){ const f = $('held'); f.textContent = 'Held on ' + CAMS[state.live].toLowerCase(); f.classList.add('show'); setTimeout(() => f.classList.remove('show'), 1500); }
+    if (state.pending && d.kind !== 'you'){ const c = state.pending; state.pending = null; c.state = d.kind === c.want ? 'pass' : 'fail'; paintTry(); }
+    pushFeed({ who: d.kind === 'you' ? 'you' : 'cue', d }); paintScore(); }
+};
+
+/* WIRING POINT 1 of 3: server DecisionRecord -> what the page shows */
+function pick(o, ...paths){ for (const p of paths){ const v = p.split('.').reduce((a, k) => (a == null ? a : a[k]), o); if (v != null && v !== '') return v; } }
+function normalize(raw){
+  const action = String(pick(raw, 'action', 'decision.action') || 'STAY').toUpperCase(), camera = pick(raw, 'camera_id', 'cameraId', 'decision.camera_id') || state.live;
+  const reason = String(pick(raw, 'reason', 'decision.reason') || ''), manual = !!pick(raw, 'manual') || /^manual/i.test(reason);
+  let who = pick(raw, 'who', 'cue_summary.target_guest_ids', 'cueSummary.targetGuestIds', 'target_guest_ids') || []; who = (Array.isArray(who) ? who : [who]).map((w) => ROSTER[w] || w);
+  const lat = pick(raw, 'latencies_ms', 'latenciesMs', 'latency') || {};
+  let kind = 'stay'; if (manual) kind = 'you'; else if (action === 'TAKE') kind = camera === 'CAM-WIDE' ? 'wide' : 'cut'; else if (action === 'SLATE') kind = 'wide';
+  return { kind, camera, who, seq: pick(raw, 'decision_seq', 'decisionSeq'), heard: pick(raw, 'heard', 'transcript_span.text', 'transcriptSpan.text', 'cue_summary.evidence_text', 'cueSummary.evidenceText', 'evidence_text') || '',
+    when: WHEN[pick(raw, 'when', 'cue_summary.temporal_intent', 'cueSummary.temporalIntent', 'temporal_intent')] || '', scope: SCOPE[String(pick(raw, 'scope', 'cue_summary.scope', 'cueSummary.scope') || '').toLowerCase()] || '',
+    why: pick(raw, 'plain_reason', 'plainReason') || reason, cue: pick(lat, 'cue_decide_ms', 'cue', 'cue_ms', 'transcript_to_cue'), at:new Date(), rated:null };
+}
+const VERB = { cut:['ready', (d) => 'Cut to ' + CAMS[d.camera].toLowerCase()], stay:['hold', () => 'Stayed on ' + CAMS[state.live].toLowerCase()],
+               wide:['wide', () => 'Went to the wide shot'], you:['', (d) => 'Took the ' + CAMS[d.camera].toLowerCase()] };
+
+function paintMode(){ const m = state.mode; document.body.classList.toggle('manual', m === 'manual');
+  $('modeDot').className = 'dot ' + (m === 'manual' ? 'hold' : m === 'assist' ? 'cue' : state.directing ? 'ready' : '');
+  $('modeText').textContent = m === 'manual' ? 'You are in control' : m === 'assist' ? 'CUE suggests, you confirm' : 'CUE is directing';
+  $('cMainLabel').textContent = m === 'manual' ? 'Let CUE direct' : 'Take over'; $('cSuggest').classList.toggle('on', m === 'assist'); }
+function paintCams(){ document.querySelectorAll('.cam').forEach((t) => { const cam = t.dataset.cam, info = state.cams[cam] || {}, on = cam === state.live, nx = cam === state.next, bad = info.ready === false;
+  t.classList.toggle('on', on); t.classList.toggle('next', nx && !on); t.classList.toggle('bad', bad && !on);
+  t.querySelector('.dot').className = 'dot ' + (on ? 'air' : bad ? 'hold' : 'ready'); t.querySelector('small').textContent = on ? 'On air' : nx ? 'Next up' : bad ? 'Not ready' : ([state.camGuests[cam], info.note].filter(Boolean).join(' · ') || 'Ready'); }); }
+function paintScore(){ const c = (k) => state.decisions.filter((d) => d.kind === k).length; $('sCut').textContent = c('cut') + c('wide'); $('sStay').textContent = c('stay'); $('sYou').textContent = c('you');
+  const r = state.decisions.filter((d) => d.rated != null); $('sRight').textContent = r.length ? r.filter((d) => d.rated).length + ' of ' + r.length : '-'; }
+function hostSaid(text){ state.lastHost = { text, at:Date.now() }; pushFeed({ who:'host', text }); if (state.directing && state.mode !== 'manual'){ $('typing').classList.add('show'); clearTimeout(state.typeT); state.typeT = setTimeout(() => $('typing').classList.remove('show'), 4000); }
+  const norm = (s) => s.toLowerCase().replace(/[^a-z ]/g, '').split(' ').filter(Boolean), said = new Set(norm(text));
+  for (const c of CHALLENGES){ if (c.state) continue; const w = norm(c.say); if (w.filter((x) => said.has(x)).length / w.length >= .75 && Math.abs(w.length - said.size) <= 3){ c.state = 'tried'; state.pending = c; paintTry(); break; } } }
+function pushFeed(item){ item.at = new Date(); state.feed.push(item); if (state.feed.length > 80) state.feed.shift(); paintFeed(); }
+function paintFeed(){ const box = $('feed'); const hint = $('pFeed').querySelector('.empty'); if (hint) hint.remove(); box.innerHTML = '';
+  const newestCue = [...state.feed].reverse().find((m) => m.who === 'cue');
+  state.feed.forEach((m) => { const el = document.createElement('div'); el.className = 'msg ' + m.who + (m === newestCue ? ' sel' : '');
+    if (m.who === 'host') el.innerHTML = '<span class="av">H</span><div><div class="meta"><b>Host</b>' + clockStr(m.at) + '</div><div class="bub">' + markNames(m.text) + '</div></div>';
+    else if (m.who === 'you') el.innerHTML = '<div><div class="meta">' + clockStr(m.at) + '<b>You</b></div><div class="bub">' + esc(m.text || VERB.you[1](m.d)) + '</div></div>';
+    else { const d = m.d, chips = m === newestCue && (d.who.length || d.when) ? '<div class="chips">' + (d.who.length ? '<span>Who <b>' + esc(d.who.join(', ')) + '</b></span>' : '') + (d.when ? '<span>When <b>' + d.when + '</b></span>' : '') + (d.scope ? '<span>About <b>' + d.scope + '</b></span>' : '') + '</div>' : '';
+      const rate = m === newestCue ? '<div class="rate"><button type="button" class="yes' + (d.rated === true ? ' on' : '') + '">Right call</button><button type="button" class="no' + (d.rated === false ? ' on' : '') + '">Wrong call</button></div>' : (d.rated != null ? '<div class="chips"><span>You marked this ' + (d.rated ? 'right' : 'wrong') + '</span></div>' : '');
+      el.innerHTML = '<span class="av">C</span><div><div class="meta"><b>CUE</b>' + clockStr(m.at) + (d.cue != null ? '<span>decided in ' + Math.round(d.cue) + ' ms</span>' : '') + '</div><div class="bub"><strong><span class="dot ' + VERB[d.kind][0] + '"></span>' + (m.text || VERB[d.kind][1](d)) + '</strong><p>' + esc(d.why || '') + '</p>' + chips + rate + '</div></div>';
+      const y = el.querySelector('.yes'), n = el.querySelector('.no'); if (y){ y.onclick = () => rateIt(d, true); n.onclick = () => rateIt(d, false); } }
+    box.appendChild(el); });
+  const pane = $('pFeed'); pane.scrollTop = pane.scrollHeight; }
+function rateIt(d, v){ d.rated = d.rated === v ? null : v; send({ type:'rate', decision_seq:d.seq, right:d.rated }); paintScore(); paintFeed(); }
+function paintTry(){ const tried = CHALLENGES.filter((c) => c.state).length, ok = CHALLENGES.filter((c) => c.state === 'pass').length;
+  $('tryHead').textContent = tried ? 'Try to fool it. ' + tried + ' tried, CUE got ' + ok + ' right.' : 'Try to fool it. Say one of these out loud.';
+  $('tryRow').innerHTML = CHALLENGES.map((c) => '<span class="' + (c.state === 'pass' ? 'pass' : c.state === 'fail' ? 'fail' : '') + '">' + esc(c.say) + '</span>').join(''); }
+let idleI = 0; function idleCaption(){ const open = CHALLENGES.filter((c) => !c.state); $('cap').classList.add('idle');
+  $('capLine').innerHTML = open.length ? 'Listening. Try saying \u201C' + esc(open[idleI++ % open.length].say) + '\u201D' : 'Listening for the host'; }
+setInterval(() => { if ($('cap').classList.contains('idle')) idleCaption(); }, 5000);
+
+function showSuggestion(d){ state.sug = d; CUE.setNext(d.camera); $('sugText').textContent = 'CUE suggests the ' + CAMS[d.camera].toLowerCase() + '. ' + (d.why || '');
+  const bar = $('sugBar'); bar.style.animation = 'none'; void bar.offsetWidth; bar.style.animation = ''; $('suggest').classList.add('show'); clearTimeout(state.sugT); state.sugT = setTimeout(() => skipSuggestion(true), 6000); }
+function hideSuggestion(){ clearTimeout(state.sugT); $('suggest').classList.remove('show'); state.sug = null; }
+function acceptSuggestion(){ const d = state.sug; if (!d) return; hideSuggestion(); d.rated = true; send({ type:'accept_suggestion', decision_seq:d.seq }); state.decisions.unshift(d); CUE.setLive(d.camera); pushFeed({ who:'cue', d, text:'You accepted: ' + VERB[d.kind][1](d).toLowerCase() }); paintScore(); }
+function skipSuggestion(timedOut){ const d = state.sug; if (!d) return; hideSuggestion(); CUE.setNext(null); send({ type:'skip_suggestion', decision_seq:d.seq }); pushFeed({ who:'you', text: timedOut ? 'Suggestion timed out. Staying put.' : "Skipped CUE's suggestion." }); }
+$('sugYes').onclick = acceptSuggestion; $('sugNo').onclick = () => skipSuggestion(false);
+
+/* WIRING POINT 2 of 3: outgoing message names */
+function send(msg){ const ok = state.ws && state.ws.readyState === 1; if (ok) state.ws.send(JSON.stringify(msg)); return ok; }
+function take(cam){ if (!CAMS[cam] || cam === state.live) return; hideSuggestion(); if (state.mode === 'auto') userMode('manual', true);
+  if (!send({ type:'manual_take', camera:cam })) CUE.addDecision({ action:'TAKE', camera_id:cam, manual:true, accepted:true }); }
+const SAID = { manual:'Took over. CUE will not cut.', assist:'Suggest mode on. Space takes a suggestion.', auto:'Handed control back to CUE.' };
+function userMode(mode, quiet){ if (mode === state.mode) return; send({ type:'set_mode', mode }); CUE.setMode(mode); if (!quiet) pushFeed({ who:'you', text:SAID[mode] }); }
+$('cMain').onclick = () => userMode(state.mode === 'manual' ? 'auto' : 'manual'); $('cSuggest').onclick = () => userMode(state.mode === 'assist' ? 'auto' : 'assist');
+$('cBack').onclick = () => state.prev && take(state.prev); $('cWide').onclick = () => take('CAM-WIDE'); $('cStatus').onclick = () => document.querySelector('.tab[data-pane="pStatus"]').click();
+document.querySelectorAll('.cam').forEach((t) => (t.onclick = () => take(t.dataset.cam)));
+document.querySelectorAll('.tab').forEach((t) => (t.onclick = () => { document.querySelectorAll('.tab').forEach((x) => x.classList.toggle('on', x === t)); document.querySelectorAll('.pane').forEach((p) => p.classList.toggle('on', p.id === t.dataset.pane)); }));
+addEventListener('keydown', (e) => { if (e.metaKey || e.ctrlKey || e.altKey) return; const k = e.key.toLowerCase();
+  if (k === '1') take('CAM-HOST'); else if (k === '2') take('CAM-GUEST'); else if (k === '3' || k === 'w' || k === '0') take('CAM-WIDE');
+  else if (/^[4-9]$/.test(k)){ const t = document.querySelectorAll('.cam')[+k - 1]; if (t) take(t.dataset.cam); }
+  else if (k === ' ' && state.sug){ e.preventDefault(); acceptSuggestion(); } else if (k === 'escape' && state.sug) skipSuggestion(false);
+  else if (k === 'backspace' && state.prev){ e.preventDefault(); take(state.prev); } else if (k === 'h') userMode('manual'); else if (k === 's') userMode('assist'); else if (k === 'a') userMode('auto'); });
+setInterval(() => { $('clock').textContent = mmss(Date.now() - state.started).padStart(5, '0'); const on = Date.now() - state.liveSince, el = $('shot'); el.textContent = mmss(on); el.classList.toggle('long', on > 45000); }, 500);
+
+/* Frames come from the director over /ws as binary [u8 idlen][camera id][JPEG]; no local webcam here. */
+const FRAMES = { last:{} };
+function drawFrame(c, bm){ if (!c || !bm) return; if (c.width !== bm.width || c.height !== bm.height){ c.width = bm.width; c.height = bm.height; } c.getContext('2d').drawImage(bm, 0, 0); }
+function paintFrame(cam, bm){ const old = FRAMES.last[cam]; FRAMES.last[cam] = bm; if (old && old !== bm) old.close();
+  drawFrame(document.querySelector('.cam[data-cam="' + cam + '"] canvas'), bm); if (cam === state.live) drawFrame($('pgm'), bm); }
+const _setLive = CUE.setLive; CUE.setLive = (cam) => { _setLive(cam); if (FRAMES.last[cam]) drawFrame($('pgm'), FRAMES.last[cam]); };
+function onFrame(buf){ const u8 = new Uint8Array(buf); const n = u8[0]; const cam = new TextDecoder().decode(u8.subarray(1, 1 + n)); ensureTile(cam); if (!CAMS[cam]) return;
+  createImageBitmap(new Blob([u8.subarray(1 + n)], { type:'image/jpeg' })).then((bm) => paintFrame(cam, bm)).catch(() => {}); }
+
+/* WIRING POINT 3 of 3: incoming message names */
+function onServerMessage(m){ const t = m.type || m.event;
+  if (t === 'caption_provisional') CUE.setCaption(m.text, false); else if (t === 'caption_final') CUE.setCaption(m.text, true);
+  else if (t === 'decision') CUE.addDecision(m.record || m.decision || m);
+  else if (t === 'mode') CUE.setMode(/hold|manual/i.test(m.mode || '') ? 'manual' : /assist|suggest/i.test(m.mode || '') ? 'assist' : 'auto');
+  else if (t === 'source') CUE.setSource(m.source); else if (t === 'directing') CUE.setDirecting(m.enabled);
+  else if (t === 'caption_status') CUE.setCaptionStatus(!!m.connected, m.label);
+  else if (t === 'deepgram_config') CUE.setDeepgramConfig(m.config || m); else if (t === 'deepgram_result') CUE.addDeepgramResult(m.result || m);
+  else if (t === 'latency') CUE.setLatency(m.latency || m);
+  else if (t === 'roster'){ stopSignupBridge(); CUE.setRoster(m.guests || m.roster); }
+  else if (t === 'prepare') CUE.setNext(m.camera || m.camera_id); else if (t === 'stand_down') CUE.setNext(null);
+  else if (t === 'camera_state'){ ensureTile(m.camera || m.camera_id); CUE.setCameraState(m.camera || m.camera_id, { ready:m.ready, note:m.note }); }
+  else if (t === 'mic_level') CUE.setMicLevel(Number(m.level) || 0);
+  else if (t === 'error') pushFeed({ who:'cue', text:'Refused: ' + (m.error || 'unknown error') }); }
+function connect(){ let opened = false; try { const ws = state.ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws');
+  ws.binaryType = 'arraybuffer'; ws.onopen = () => { opened = true; };
+  ws.onmessage = (ev) => { if (typeof ev.data !== 'string'){ onFrame(ev.data); return; } try { onServerMessage(JSON.parse(ev.data)); } catch {} };
+  ws.onclose = () => { if (!opened) demo(); else setTimeout(connect, 1000); }; } catch { demo(); }
+  setTimeout(() => { if (!opened) demo(); }, 1500); }
+
+/* scripted demo: only when no server answers. Never shows latency numbers. */
+let demoOn = false; async function demo(){ if (demoOn) return; demoOn = true; CUE.setSource('demo'); CUE.setCaptionStatus(false, 'Scripted captions'); $('dgModel').textContent = 'Scripted, no Deepgram'; $('stModel').textContent = 'Scripted';
+  CUE.setRoster([{ name:'Sarah Tan', role:'Guest of honour' }, { name:'Daniel Reyes', role:'Speaker' }, { name:'Priya Shah', role:'Judge' }]);
+  CUE.setCameraState('CAM-GUEST', { ready:true, note:'Sarah in frame' }); CUE.setCameraState('CAM-WIDE', { ready:true, note:'Whole stage' });
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const say = async (text) => { const w = text.split(' '); for (let i = 1; i <= w.length; i++){ const part = w.slice(0, i).join(' '); CUE.setCaption(part, false); CUE.setMicLevel(.3 + Math.random() * .5);
+      if (state.mode !== 'manual' && /sarah/i.test(w[i - 1]) && state.live !== 'CAM-GUEST') CUE.setNext('CAM-GUEST'); if (i % 2 === 0) CUE.addDeepgramResult({ text:part }); await wait(150); }
+    CUE.setMicLevel(0); CUE.addDeepgramResult({ text, is_final:true }); CUE.setCaption(text, true); await wait(700); };
+  const beats = [ ['Sarah joins us after the break.', { action:'STAY', who:['sarah'], when:'FUTURE', scope:'single', plain_reason:'Sarah is joining later, not now.' }],
+    ["Don't bring Sarah up yet.", { action:'STAY', who:['sarah'], when:'NEGATED', scope:'single', plain_reason:'The host said not yet.' }],
+    ['Sarah, please come up now.', { action:'TAKE', camera_id:'CAM-GUEST', who:['sarah'], when:'NOW', scope:'single', plain_reason:'She was just invited up and her camera is ready.' }],
+    ['Please welcome Sarah and Daniel.', { action:'TAKE', camera_id:'CAM-WIDE', who:['sarah','daniel'], when:'NOW', scope:'group', plain_reason:'Two people at once, so the wide shot.' }],
+    ['Thank you both. Back to me.', { action:'TAKE', camera_id:'CAM-HOST', who:[], when:'NOW', scope:'none', plain_reason:'The host took the focus back.' }] ];
+  while (true){ for (const [text, rec] of beats){ if (state.mode === 'manual' || state.sug){ await wait(900); continue; } await say(text); CUE.addDecision(Object.assign({ heard:text }, rec)); await wait(2600); } await wait(1500); } }
+
+/* Sign-up bridge. signup.html writes to a Google Sheet, and a sheet cannot push,
+   so the desk pulls: a guest who presses Send shows up here within one interval.
+   A `roster` message from the server always wins and stops the polling - the
+   backend is the authoritative source, this is only the gap-filler. */
+const SIGNUP = Object.assign({ endpoint:'', eventId:'', deskPollMs:4000 }, window.CUE_SIGNUP || {});
+let bridgeTimer = null, bridgeStopped = false;
+function stopSignupBridge(){ bridgeStopped = true; if (bridgeTimer){ clearInterval(bridgeTimer); bridgeTimer = null; } }
+async function pollSignups(){
+  if (!SIGNUP.endpoint || bridgeStopped) return;
+  try {
+    const url = SIGNUP.endpoint + (SIGNUP.endpoint.includes('?') ? '&' : '?') + 'action=roster' +
+      (SIGNUP.eventId ? '&eventId=' + encodeURIComponent(SIGNUP.eventId) : '');
+    const body = await (await fetch(url, { redirect:'follow' })).json();
+    if (body && body.ok !== false && Array.isArray(body.participants)) CUE.setRoster(body.participants);
+  } catch {}
+}
+if (SIGNUP.endpoint){
+  pollSignups();
+  bridgeTimer = setInterval(pollSignups, Math.max(2000, SIGNUP.deskPollMs));
+  /* coming back to the tab should not wait out the interval */
+  addEventListener('visibilitychange', () => { if (!document.hidden) pollSignups(); });
+  addEventListener('focus', pollSignups);
+}
+
+paintMode(); paintCams(); paintTry(); idleCaption(); connect();
+</script>
+</body>
+</html>

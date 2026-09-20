@@ -1,0 +1,13 @@
+.venv/
+camera/.venv/
+__pycache__/
+models/*.onnx
+data/
+.env
+dist/
+.pytest_cache/
+reports/llm_eval_*.json
+server/static/config.js
+# self-signed dev certificates from tools/serve_https.py
+.certs/
+*.pem
