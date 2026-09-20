@@ -341,7 +341,7 @@ function normalize(raw){
     why: pick(raw, 'plain_reason', 'plainReason') || reason, cue: pick(lat, 'cue_decide_ms', 'cue', 'cue_ms', 'transcript_to_cue'), at:new Date(), rated:null };
 }
 const VERB = { cut:['ready', (d) => 'Cut to ' + CAMS[d.camera].toLowerCase()], stay:['hold', () => 'Stayed on ' + CAMS[state.live].toLowerCase()],
-               wide:['wide', () => 'Went to the wide shot'], you:['', (d) => 'Took the ' + CAMS[d.camera].toLowerCase()] };
+               wide:['wide', () => 'Went to the wide shot'], you:['', (d) => 'Took the ' + CAMS[d.camera].toLowerCase() + (state.mode === 'auto' ? '. CUE keeps directing.' : '')] };
 
 function paintMode(){ const m = state.mode; document.body.classList.toggle('manual', m === 'manual');
   $('modeDot').className = 'dot ' + (m === 'manual' ? 'hold' : m === 'assist' ? 'cue' : state.directing ? 'ready' : '');
@@ -384,7 +384,8 @@ $('sugYes').onclick = acceptSuggestion; $('sugNo').onclick = () => skipSuggestio
 
 /* WIRING POINT 2 of 3: outgoing message names */
 function send(msg){ const ok = state.ws && state.ws.readyState === 1; if (ok) state.ws.send(JSON.stringify(msg)); return ok; }
-function take(cam){ if (!CAMS[cam] || cam === state.live) return; hideSuggestion(); if (state.mode === 'auto') userMode('manual', true);
+/* one-shot: a tile click (or 1-9) is a one-off cut and CUE keeps directing; upstream switched to take-over here. Use Take over / H for a real hold. */
+function take(cam){ if (!CAMS[cam] || cam === state.live) return; hideSuggestion();
   if (!send({ type:'manual_take', camera:cam })) CUE.addDecision({ action:'TAKE', camera_id:cam, manual:true, accepted:true }); }
 const SAID = { manual:'Took over. CUE will not cut.', assist:'Suggest mode on. Space takes a suggestion.', auto:'Handed control back to CUE.' };
 function userMode(mode, quiet){ if (mode === state.mode) return; send({ type:'set_mode', mode }); CUE.setMode(mode); if (!quiet) pushFeed({ who:'you', text:SAID[mode] }); }

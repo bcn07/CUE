@@ -13,6 +13,11 @@ Desk contract (from the cue-desk-ui README): server -> desk `source`, `directing
 Frames go to the desk as the same binary the /ui page gets, with the camera id
 in the header rewritten to the desk's CAM-HOST / CAM-GUEST / CAM-WIDE.
 
+Deviation from upstream, on purpose: a tile click (or a digit key) is a one-off cut and the
+director keeps directing; upstream switched the desk into take-over on any tile click, which
+paused automatic cuts until someone pressed "Let CUE direct" and bit the operator three times
+in one rehearsal. Take over / H still holds for real.
+
 Honest limits: with a director whose snapshot carries `assist`, the desk's
 assist, accept and skip map straight through; against an older director without
 it, "assist" falls back to HOLD and the desk is told so. The one-shot measures no
@@ -139,7 +144,7 @@ def plain_reason(action: str, reason: str, evidence: str, desk_cam: str | None) 
         return f"You took the {where}."
     if action == "STAY":
         if "hold" in r:
-            return "Automatic cuts are paused."
+            return "Automatic cuts are paused: you are in take-over. Press Let CUE direct (or A) to resume."
         if "future" in r or "later" in r:
             return "That is for later, not now."
         if "negat" in r or "not " in r:

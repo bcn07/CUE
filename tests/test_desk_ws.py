@@ -178,7 +178,7 @@ def test_held_slate_is_not_an_operator_take():
     assert not rec["reason"].lower().startswith("manual")
     assert rec["plain_reason"] == "No usable camera, so the safe picture."
     stay = dw.decision_record(snap(last_decision={"action": "STAY", "camera_id": "B", "reason": "manual HOLD", "evidence": "hold"}), CMAP)
-    assert stay["plain_reason"] == "Automatic cuts are paused." and not stay["reason"].lower().startswith("manual")
+    assert stay["plain_reason"] == "Automatic cuts are paused: you are in take-over. Press Let CUE direct (or A) to resume." and not stay["reason"].lower().startswith("manual")
 
 
 SUG = {"camera_id": "C", "confidence": 0.81, "reason_codes": ["ADDRESSED", "FACE_VISIBLE"],
