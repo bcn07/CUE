@@ -53,8 +53,56 @@ def camera_map(cameras: dict[str, dict]) -> dict[str, str]:
     return out
 
 
-def desk_mode(mode: str | None) -> str:
+def supports_assist(snapshot: dict | None) -> bool:
+    """The director exposes ASSIST once its snapshot carries the `assist` flag."""
+    return bool(snapshot) and "assist" in snapshot
+
+
+def desk_mode(mode: str | None, assist: bool = False) -> str:
+    if assist:
+        return "assist"
     return "manual" if str(mode or "").upper() == "HOLD" else "auto"
+
+
+def snapshot_mode(snapshot: dict | None) -> str:
+    snapshot = snapshot or {}
+    return desk_mode(snapshot.get("mode"), bool(snapshot.get("assist")))
+
+
+def suggestion_record(snapshot: dict, cmap: dict[str, str]) -> dict | None:
+    """The director's current suggestion as a DecisionRecord without `accepted`,
+    which is what makes the desk show its suggestion card in assist mode."""
+    sug = snapshot.get("suggestion")
+    if not sug:
+        return None
+    raw_cam = sug.get("camera_id")
+    desk_cam = cmap.get(raw_cam, raw_cam) if raw_cam else None
+    if not desk_cam:
+        return None
+    cue = snapshot.get("last_cue") or {} if sug.get("origin") == "cue" else {}
+    codes = [str(c) for c in (sug.get("reason_codes") or [])]
+    return {
+        "decision_seq": sug.get("state_version") or snapshot.get("decision_ver"),
+        "action": "TAKE",
+        "camera_id": desk_cam,
+        "reason": "suggest: " + (", ".join(codes) if codes else str(sug.get("origin") or "director")),
+        "plain_reason": str(sug.get("explanation") or "").strip() or f"CUE suggests the {desk_cam}.",
+        "transcript_span": {"text": cue.get("clause_text") or cue.get("evidence_text") or ""},
+        "cue_summary": {
+            "target_guest_ids": list(cue.get("target_ids") or []),
+            "temporal_intent": cue.get("temporal_intent"),
+            "scope": cue.get("scope"),
+        },
+        "latencies_ms": {},
+        "confidence": sug.get("confidence"),
+    }
+
+
+def _suggestion_key(snapshot: dict | None) -> tuple | None:
+    sug = (snapshot or {}).get("suggestion")
+    if not sug:
+        return None
+    return (sug.get("camera_id"), sug.get("state_version"), sug.get("at_wall"))
 
 
 def plain_reason(action: str, reason: str, evidence: str, desk_cam: str | None) -> str:
@@ -177,7 +225,7 @@ def on_connect_messages(snapshot: dict, cmap: dict[str, str]) -> list[dict]:
                 keyterms.append(name)
     msgs: list[dict] = [
         {"type": "source", "source": "mic" if dg.get("configured") else "fixture"},
-        {"type": "directing", "enabled": desk_mode(snapshot.get("mode")) == "auto"},
+        {"type": "directing", "enabled": snapshot_mode(snapshot) == "auto"},
         {
             "type": "caption_status",
             "connected": _caption_connected(snapshot),
@@ -191,13 +239,17 @@ def on_connect_messages(snapshot: dict, cmap: dict[str, str]) -> list[dict]:
                 for p in roster
             ],
         },
-        {"type": "mode", "mode": desk_mode(snapshot.get("mode"))},
+        {"type": "mode", "mode": snapshot_mode(snapshot)},
     ]
     for desk, info in camera_states(snapshot, cmap).items():
         msgs.append({"type": "camera_state", "camera": desk, **info})
     record = decision_record(snapshot, cmap)
     if record:
         msgs.append({"type": "decision", "record": record})
+    sug = suggestion_record(snapshot, cmap)
+    if sug:
+        msgs.append({"type": "prepare", "camera": sug["camera_id"]})
+        msgs.append({"type": "decision", "record": sug})
     return msgs
 
 
@@ -206,9 +258,9 @@ def diff_messages(prev: dict | None, cur: dict, cmap: dict[str, str]) -> list[di
     msgs: list[dict] = []
     prev = prev or {}
 
-    if desk_mode(prev.get("mode")) != desk_mode(cur.get("mode")):
-        msgs.append({"type": "mode", "mode": desk_mode(cur.get("mode"))})
-        msgs.append({"type": "directing", "enabled": desk_mode(cur.get("mode")) == "auto"})
+    if snapshot_mode(prev) != snapshot_mode(cur):
+        msgs.append({"type": "mode", "mode": snapshot_mode(cur)})
+        msgs.append({"type": "directing", "enabled": snapshot_mode(cur) == "auto"})
 
     interim = (cur.get("interim") or {}).get("text") or ""
     if interim and interim != ((prev.get("interim") or {}).get("text") or ""):
@@ -239,6 +291,14 @@ def diff_messages(prev: dict | None, cur: dict, cmap: dict[str, str]) -> list[di
     elif had and not has:
         msgs.append({"type": "stand_down"})
 
+    if _suggestion_key(prev) != _suggestion_key(cur):
+        sug = suggestion_record(cur, cmap)
+        if sug:
+            msgs.append({"type": "prepare", "camera": sug["camera_id"]})
+            msgs.append({"type": "decision", "record": sug})
+        elif _suggestion_key(prev) is not None:
+            msgs.append({"type": "stand_down"})
+
     if prev and _caption_connected(prev) != _caption_connected(cur):
         dg = _deepgram(cur)
         msgs.append({"type": "caption_status", "connected": _caption_connected(cur), "label": f"Deepgram {dg.get('model')}"})
@@ -262,8 +322,13 @@ def rewrite_frame(payload: bytes, cmap: dict[str, str]) -> bytes | None:
     return bytes([len(did)]) + did + payload[1 + n :]
 
 
-def desk_to_control(msg: dict, cmap: dict[str, str]) -> tuple[str, str | None] | None:
-    """Desk message -> (action, camera_id) for Show.control, or None when nothing to do."""
+def desk_to_control(
+    msg: dict, cmap: dict[str, str], assist_supported: bool = False
+) -> tuple[str, str | None] | None:
+    """Desk message -> (action, camera_id) for Show.control, or None when nothing to do.
+
+    With a director that has ASSIST, the desk's assist, accept and skip map straight
+    through; without it, assist falls back to HOLD and accept/skip do nothing."""
     t = msg.get("type")
     inverse = {desk: cid for cid, desk in cmap.items()}
     if t == "manual_take":
@@ -275,9 +340,15 @@ def desk_to_control(msg: dict, cmap: dict[str, str]) -> tuple[str, str | None] |
         mode = str(msg.get("mode") or "").lower()
         if mode == "auto":
             return ("auto", None)
-        if mode in ("manual", "hold", "assist"):
+        if mode == "assist":
+            return ("assist", None) if assist_supported else ("hold", None)
+        if mode in ("manual", "hold"):
             return ("hold", None)
         raise HTTPException(400, f"unknown mode {mode}")
+    if t == "accept_suggestion":
+        return ("accept", None) if assist_supported else None
+    if t == "skip_suggestion":
+        return ("skip", None) if assist_supported else None
     return None
 
 
@@ -368,15 +439,16 @@ def install(app: FastAPI, show: Any, static_dir: Path, is_public_host: Any) -> N
                     continue
                 t = msg.get("type")
                 try:
-                    if t in ("manual_take", "set_mode"):
-                        mapped = desk_to_control(msg, client.cmap)
+                    assist_ok = supports_assist(client.prev)
+                    if t in ("manual_take", "set_mode", "accept_suggestion", "skip_suggestion"):
+                        mapped = desk_to_control(msg, client.cmap, assist_ok)
                         if mapped:
                             show.control(*mapped)
-                            if t == "set_mode" and str(msg.get("mode")).lower() == "assist":
-                                client.queue({"type": "mode", "mode": "manual"})
-                                client.queue({"type": "error", "error": "This director has AUTO and HOLD only; assist is treated as take-over"})
-                    elif t in ("accept_suggestion", "skip_suggestion"):
-                        show.log_event("desk", f"{t} for decision {msg.get('decision_seq')}: no suggestions in this director")
+                        if t == "set_mode" and str(msg.get("mode")).lower() == "assist" and not assist_ok:
+                            client.queue({"type": "mode", "mode": "manual"})
+                            client.queue({"type": "error", "error": "This director has AUTO and HOLD only; assist is treated as take-over"})
+                        elif mapped is None and t in ("accept_suggestion", "skip_suggestion"):
+                            show.log_event("desk", f"{t} for decision {msg.get('decision_seq')}: no suggestions in this director")
                     elif t == "rate":
                         show.log_event("rate", f"decision {msg.get('decision_seq')} rated {'right' if msg.get('right') else 'wrong' if msg.get('right') is False else 'cleared'}")
                 except HTTPException as e:

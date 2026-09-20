@@ -153,3 +153,43 @@ def test_held_slate_is_not_an_operator_take():
     assert rec["plain_reason"] == "No usable camera, so the safe picture."
     stay = dw.decision_record(snap(last_decision={"action": "STAY", "camera_id": "B", "reason": "manual HOLD", "evidence": "hold"}), CMAP)
     assert stay["plain_reason"] == "Automatic cuts are paused." and not stay["reason"].lower().startswith("manual")
+
+
+SUG = {"camera_id": "C", "confidence": 0.81, "reason_codes": ["ADDRESSED", "FACE_VISIBLE"],
+       "explanation": "Sarah was just addressed and her camera is ready.", "origin": "cue", "at_wall": 1.0, "state_version": 7}
+
+
+def test_assist_director_maps_assist_accept_and_skip_straight_through():
+    assert dw.desk_to_control({"type": "set_mode", "mode": "assist"}, CMAP, assist_supported=True) == ("assist", None)
+    assert dw.desk_to_control({"type": "accept_suggestion", "decision_seq": 7}, CMAP, assist_supported=True) == ("accept", None)
+    assert dw.desk_to_control({"type": "skip_suggestion", "decision_seq": 7}, CMAP, assist_supported=True) == ("skip", None)
+    # Older director: assist is HOLD, accept and skip do nothing.
+    assert dw.desk_to_control({"type": "set_mode", "mode": "assist"}, CMAP) == ("hold", None)
+    assert dw.desk_to_control({"type": "accept_suggestion", "decision_seq": 7}, CMAP) is None
+    assert dw.supports_assist(snap()) is False and dw.supports_assist(snap(assist=False)) is True
+
+
+def test_assist_snapshot_reports_assist_mode_and_a_suggestion_card():
+    s = snap(assist=True, suggestion=SUG)
+    msgs = dw.on_connect_messages(s, CMAP)
+    assert next(m for m in msgs if m["type"] == "mode")["mode"] == "assist"
+    assert next(m for m in msgs if m["type"] == "directing")["enabled"] is False
+    assert next(m for m in msgs if m["type"] == "prepare")["camera"] == "CAM-GUEST"
+    cards = [m["record"] for m in msgs if m["type"] == "decision" and m["record"]["reason"].startswith("suggest")]
+    assert len(cards) == 1
+    card = cards[0]
+    assert card["camera_id"] == "CAM-GUEST" and card["decision_seq"] == 7 and "accepted" not in card
+    assert card["plain_reason"] == "Sarah was just addressed and her camera is ready."
+    assert card["cue_summary"]["target_guest_ids"] == ["sarah"]
+
+
+def test_suggestion_appearing_and_clearing_emits_prepare_and_stand_down_once_each():
+    a = snap(assist=True, suggestion=None)
+    b = snap(assist=True, suggestion=SUG)
+    types = [m["type"] for m in dw.diff_messages(a, b, CMAP)]
+    assert types.count("prepare") == 1 and types.count("decision") == 1
+    assert [m["type"] for m in dw.diff_messages(b, b, CMAP)] == ["mic_level"]
+    assert "stand_down" in [m["type"] for m in dw.diff_messages(b, a, CMAP)]
+    # A changed suggestion (new state_version) is a new card.
+    c = snap(assist=True, suggestion={**SUG, "camera_id": "A", "state_version": 8})
+    assert next(m for m in dw.diff_messages(b, c, CMAP) if m["type"] == "prepare")["camera"] == "CAM-WIDE"

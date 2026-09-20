@@ -347,11 +347,14 @@ same binary frames the `/ui` page gets (iPhone cameras through `/ingest`), with
 the camera id rewritten to `CAM-HOST` / `CAM-GUEST` / `CAM-WIDE` by role. Like
 `/ui`, neither `/desk` nor `/ws` exists through the public tunnel host.
 
-Open `http://127.0.0.1:8000/desk` on the director Mac. Limits, stated on
-purpose: this director has AUTO and HOLD only, so the desk's "assist" is
-treated as take-over and the desk is told; no Deepgram first-word latency is
-measured, so that row stays empty; decisions are read from the ~4 Hz state
-snapshot, so two decisions inside one tick show as the later one.
+Open `http://127.0.0.1:8000/desk` on the director Mac. When the director's
+snapshot carries `assist` and `suggestion`, the desk's assist, accept and skip
+map to the director's `assist`, `accept` and `skip` controls and a suggestion
+shows as the desk's suggestion card; with an older director, assist falls back
+to HOLD and the desk is told. Limits, stated on purpose: no Deepgram
+first-word latency is measured, so that row stays empty; decisions are read
+from the ~4 Hz state snapshot, so two decisions inside one tick show as the
+later one.
 
 The `/ui` protocol is unchanged; the adapter subscribes to the same fan-out.
 Tests: `tests/test_desk_ws.py`.
