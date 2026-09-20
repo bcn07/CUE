@@ -4,6 +4,8 @@ Verifies: ingest -> identity -> rules interpreter -> director -> program switch,
 min-shot hold + pending re-evaluation, non-NOW never cuts, dead-camera failover."""
 from __future__ import annotations
 
+import asyncio
+
 import json
 import os
 import socket
@@ -35,10 +37,13 @@ def free_port() -> int:
     return p
 
 
+JOIN = {"code": ""}
+
+
 class FakeCam(threading.Thread):
-    def __init__(self, port: int, cam: str, image: Path | None, fps: float = 10):
+    def __init__(self, port: int, cam: str, image: Path | None, fps: float = 10, code: str | None = None):
         super().__init__(daemon=True)
-        self.url = f"ws://127.0.0.1:{port}/ingest?cam={cam}&label=Fake{cam}"
+        self.url = f"ws://127.0.0.1:{port}/ingest?cam={cam}&label=Fake{cam}&code={JOIN['code'] if code is None else code}"
         self.cam = cam
         self.fps = fps
         self.stop_ev = threading.Event()
@@ -93,6 +98,7 @@ def server(tmp_path_factory):
         proc.kill()
         out = proc.stdout.read() if proc.stdout else ""
         pytest.fail("server did not start:\n" + out[-4000:])
+    JOIN["code"] = httpx.get(base + "/api/join-code", timeout=5).json()["code"]
     yield base, port
     proc.terminate()
     try:
@@ -203,18 +209,18 @@ def test_full_pipeline_rules_only(server):
         # 9. operator labels win over what the laptop announces (FakeCam sends label=FakeX)
         assert c.get("/api/state").json()["cameras"]["B"]["label"] == "Guest close-up"
 
-        # 10. a reconnecting camera: the newer connection owns the id exclusively; the old socket is closed by
-        #     the server and its closing must not mark the new stream disconnected
-        old_sent = cams["C"].sent
+        # 10. a second publisher for a live camera waits in STANDBY (no interleaving); when the live one
+        #     drops, the waiting one takes over and the camera stays healthy
         c2 = FakeCam(port, "C", FX / "biden.jpg")
         c2.start()
-        time.sleep(0.6)
-        cams["C"].stop_ev.set()           # the replaced client would otherwise reconnect and take the id back
-        cams["C"] = c2
-        time.sleep(2.0)
+        time.sleep(0.8)
         st = c.get("/api/state").json()
-        assert st["cameras"]["C"]["connected"] and st["cameras"]["C"]["healthy"], st["cameras"]["C"]
-        assert any("replaces the previous" in e["text"] for e in st["events"] if e["kind"] == "camera")
+        assert st["cameras"]["C"]["pending_publisher"], st["cameras"]["C"]
+        cams["C"].stop_ev.set()
+        cams["C"] = c2
+        st = wait_for(lambda: (lambda s: s if s["cameras"]["C"]["healthy"] and s["cameras"]["C"]["pending_publisher"] is None else None)(c.get("/api/state").json()), 6)
+        assert st, c.get("/api/state").json()["cameras"]["C"]
+        assert any("takes over" in e["text"] for e in st["events"] if e["kind"] == "camera")
 
         # 10b. a deferral drops a cue that was held by the minimum shot (A is live; cut to C starts a fresh shot)
         assert c.post("/api/control", json={"action": "take", "camera_id": "C"}).json()["program"] == "C"
@@ -252,6 +258,49 @@ def test_full_pipeline_rules_only(server):
         assert c.delete("/api/people/%2e%2e").status_code == 404
         assert len(c.get("/api/people").json()["people"]) == 2
 
+        # 12b. join code: a camera without the code is refused and never creates a camera
+        bad = FakeCam(port, "Q", None, code="000000")
+        bad.start(); time.sleep(1.5); bad.stop_ev.set()
+        assert "Q" not in c.get("/api/state").json()["cameras"]
+        assert any("bad join code" in e["text"] for e in c.get("/api/state").json()["events"] if e["kind"] == "camera")
+
+        # 12c. through the tunnel only /cam exists: a public hostname gets 404 for the director and the API
+        pub = {"Host": "demo.trycloudflare.com"}
+        assert c.get("/cam", headers=pub).status_code == 200
+        assert c.get("/", headers=pub).status_code == 404 and c.get("/api/state", headers=pub).status_code == 404
+        assert c.get("/setup", headers=pub).status_code == 404
+
+        # 12d. a second publisher for a live camera waits in STANDBY until the director approves; then it replaces
+        import websockets as _ws
+
+        async def standby_flow():
+            async with _ws.connect(f"ws://127.0.0.1:{port}/ingest?cam=A&code={JOIN['code']}&label=Phone", max_size=None) as w2:
+                first = json.loads(await asyncio.wait_for(w2.recv(), timeout=5))
+                assert first["type"] == "standby", first
+                st = c.get("/api/state").json()
+                assert st["cameras"]["A"]["pending_publisher"], st["cameras"]["A"]
+                assert c.post("/api/cameras/A/approve").status_code == 200
+                msgs = []
+                for _ in range(3):
+                    msgs.append(json.loads(await asyncio.wait_for(w2.recv(), timeout=5)))
+                    if any(m["type"] == "ptz" for m in msgs):
+                        break
+                assert any(m["type"] == "ptz" for m in msgs), msgs   # framing sent on takeover = we are the owner now
+                # PTZ from the director reaches the (new) owner
+                r = c.post("/api/cameras/A/ptz", json={"x": 0.3, "y": 0.6, "zoom": 2.0}).json()
+                assert r["delivered"] and r["ptz"]["zoom"] == 2.0
+                m = json.loads(await asyncio.wait_for(w2.recv(), timeout=5))
+                assert m["type"] == "ptz" and abs(m["zoom"] - 2.0) < 1e-6 and abs(m["x"] - 0.3) < 1e-6
+                assert c.post("/api/cameras/A/ptz", json={"save": "2"}).status_code == 200
+                assert c.post("/api/cameras/A/ptz", json={"preset": "2"}).json()["ptz"]["zoom"] == 2.0
+                assert c.post("/api/cameras/A/ptz", json={"preset": "3"}).status_code == 404
+                assert c.get("/api/state").json()["cameras"]["A"]["pending_publisher"] is None
+                assert c.post("/api/cameras/A/ptz", json={"x": .5, "y": .5, "zoom": 1}).status_code == 200
+        asyncio.run(standby_flow())
+        cams["A"].stop_ev.set()                       # the old publisher was closed by the server; do not let it reconnect
+        cams["A"] = FakeCam(port, "A", None); cams["A"].start(); time.sleep(1.5)
+        assert c.get("/api/state").json()["cameras"]["A"]["healthy"]
+
         # 13. the live camera dies -> failover to a healthy camera within ~2 s
         c.post("/api/control", json={"action": "take", "camera_id": "B"})
         time.sleep(0.3)
@@ -273,6 +322,15 @@ def test_ui_websocket_receives_frames_and_state(server):
     cam.start()
 
     async def go():
+        # the director socket does not exist through the tunnel: connect to 127.0.0.1 but present a public Host
+        import socket as _socket
+        raw = _socket.create_connection(("127.0.0.1", port))
+        try:
+            async with websockets.connect(f"ws://x.trycloudflare.com:{port}/ui", sock=raw, max_size=None) as w:
+                await asyncio.wait_for(w.recv(), timeout=3)
+                raise AssertionError("public host reached /ui")
+        except (websockets.exceptions.ConnectionClosed, websockets.exceptions.InvalidStatus, websockets.exceptions.InvalidHandshake, OSError):
+            pass
         async with websockets.connect(f"ws://127.0.0.1:{port}/ui", max_size=None) as ws:
             got_state = got_frame = False
             deadline = time.time() + 8

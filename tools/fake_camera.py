@@ -18,6 +18,15 @@ import numpy as np
 from websockets.sync.client import connect
 
 
+def _fetch_code(ws_base: str) -> str:
+    import urllib.request
+    http = ws_base.rstrip("/").replace("wss://", "https://").replace("ws://", "http://")
+    try:
+        return json.load(urllib.request.urlopen(f"{http}/api/join-code", timeout=5))["code"]
+    except Exception:
+        return ""
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--server", default="ws://127.0.0.1:8000")
@@ -30,6 +39,7 @@ def main() -> int:
     ap.add_argument("--height", type=int, default=360)
     ap.add_argument("--seconds", type=float, default=0, help="stop after N seconds (0 = forever)")
     ap.add_argument("--jitter", action="store_true", help="shift the image a little each frame")
+    ap.add_argument("--code", default="", help="join code (default: fetched from the director's /api/join-code, local only)")
     a = ap.parse_args()
 
     src = None
@@ -54,7 +64,8 @@ def main() -> int:
     else:
         a.pattern = True
 
-    url = f"{a.server.rstrip('/')}/ingest?cam={a.cam.upper()}&label=Fake%20{a.cam.upper()}"
+    code = a.code or _fetch_code(a.server)
+    url = f"{a.server.rstrip('/')}/ingest?cam={a.cam.upper()}&label=Fake%20{a.cam.upper()}&code={code}"
     t_end = time.time() + a.seconds if a.seconds else None
     n = 0
     with connect(url, max_size=None) as ws:

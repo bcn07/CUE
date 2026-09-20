@@ -77,15 +77,17 @@ Copy the exact line shown on the setup page. Generic form (replace the IP with t
 macOS / Linux
 ```bash
 # copy the cue_oneshot/camera directory to the laptop (AirDrop / USB / git), then:
-./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam A
-./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam B
-./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam C
+./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam A --code 482913
+./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam B --code 482913
+./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam C --code 482913
 ```
 
 Windows
 ```bat
-camera\run_camera.bat --server ws://10.189.100.223:8000 --cam C
+camera\run_camera.bat --server ws://10.189.100.223:8000 --cam C --code 482913
 ```
+
+The join code is printed on the setup page next to these commands.
 
 Only the `camera/` directory is needed on a laptop (`stream_camera.py`, `requirements-camera.txt`,
 `run_camera.sh` / `run_camera.bat`). First run creates a venv and installs `opencv-python` and
@@ -101,6 +103,43 @@ No Python on a laptop? Open `http://<mac-ip>:8000/cam?cam=B` in Chrome. Chrome b
 http for non-localhost pages, so once per laptop enable
 `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for `http://<mac-ip>:8000` (the page explains
 this). Keep that tab visible: Chrome throttles hidden tabs.
+
+## 3b. iPhones as cameras (HTTPS tunnel, join code, virtual pan/zoom)
+
+Phones need HTTPS for the camera, so the director gets a public HTTPS address through a free
+Cloudflare quick tunnel (no account). On the Mac:
+
+```bash
+brew install cloudflared
+cloudflared tunnel --url http://localhost:8000      # prints https://<words>.trycloudflare.com; keep it running
+```
+
+Paste that address into the box at the top of `/setup`; it prints one link per camera, e.g.
+`https://<words>.trycloudflare.com/cam?cam=B&code=482913`. Open the link in Safari on the phone, tap
+Start, allow the camera. Rear camera by default, a lens picker (wide / ultra wide / telephoto where
+iOS exposes them), 1080p capture, screen kept awake, LIVE / STANDBY / OFFLINE shown on the phone,
+automatic reconnect. Phones can be on mobile data; the tunnel also sidesteps venue Wi-Fi that blocks
+device-to-device traffic (laptops can use the same link in Chrome).
+
+Security, on by default:
+
+- **Join code**: `/ingest` requires `code=<6 digits>`; the code is shown on `/setup`, is per event
+  and can be rotated there (laptop command: `--code 482913`). A wrong code is refused and logged.
+- **Tunnel-only surface**: for a `*.trycloudflare.com` hostname (or `CUE_PUBLIC_URL`), only `/cam`
+  and the camera socket exist; the director, the setup page, every API and the director socket
+  return 404 through the tunnel. They stay on the LAN.
+- **One publisher per camera id**: a second device with the right code waits in STANDBY and only
+  replaces the live one after you press REPLACE on that camera's tile (or when the live one drops).
+- Video only from phones; the master microphone stays the Mac's. Close the tunnel after the show.
+
+Virtual PTZ: the phone captures full resolution and sends a cropped window (default 960x540). On the
+director's multiview, drag a tile to pan, scroll to zoom (1x to 3x, clamped inside the frame), `⟲`
+resets, `1 2 3` recall presets (`save` then a number stores the current framing). The phone eases to
+the new framing over 400 ms. Camera moves are per camera and survive reconnects.
+
+Phone setup: plugged in, Low Power Mode off, Auto-Lock Never, Do Not Disturb on, Guided Access to
+pin Safari, landscape on a stand, Safari in the foreground (iOS pauses the camera in the background;
+the page shows OFFLINE and reconnects when it returns).
 
 ## 4. Show time: `http://localhost:8000/`
 

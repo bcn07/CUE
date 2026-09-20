@@ -53,6 +53,12 @@
   .cam .off{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--dim);font-size:13px;background:repeating-linear-gradient(45deg,#111 0 10px,#0c0c0c 10px 20px)}
   .cam .take{position:absolute;right:6px;bottom:6px;background:rgba(255,59,59,.9);color:#fff;border:0;border-radius:4px;font-size:11px;font-weight:700;padding:3px 8px;cursor:pointer;opacity:0;transition:opacity .15s}
   .cam:hover .take{opacity:1}
+  .cam .ptz{position:absolute;right:6px;top:30px;display:flex;gap:3px;opacity:0;transition:opacity .15s}
+  .cam:hover .ptz{opacity:1}
+  .cam .ptz button{background:rgba(0,0,0,.7);color:#dfe6ee;border:1px solid #3a4553;border-radius:4px;font-size:10px;padding:2px 6px;cursor:pointer}
+  .cam .ptz button.set{border-color:var(--warn);color:var(--warn)}
+  .cam .replace{position:absolute;left:6px;top:30px;background:var(--warn);color:#111;border:0;border-radius:4px;font-size:11px;font-weight:700;padding:3px 8px;cursor:pointer}
+  .cam .zoomlbl{position:absolute;left:6px;bottom:30px;background:rgba(0,0,0,.6);color:#dfe6ee;font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px}
   .right{display:flex;flex-direction:column;gap:10px;overflow:auto;min-width:0}
   .card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
   .card h2{margin:0 0 8px;font-size:11px;letter-spacing:.14em;color:var(--dim);text-transform:uppercase;display:flex;align-items:center;gap:8px}
@@ -205,9 +211,20 @@
     el.className = 'cam';
     el.innerHTML = `<canvas width="640" height="360"></canvas><div class="off">no signal</div>
       <div class="hdr"><span class="name"></span><span class="role"></span><span class="fps"></span></div>
-      <div class="who"></div><button class="take">TAKE</button>`;
+      <div class="who"></div><button class="take">TAKE</button>
+      <div class="ptz"><button data-p="1">1</button><button data-p="2">2</button><button data-p="3">3</button><button data-r="1" title="reset framing">⟲</button><button data-set="1" class="set" title="save the current framing into a preset">save</button></div>
+      <span class="zoomlbl" style="display:none"></span>`;
     el.querySelector('.take').onclick = (e) => { e.stopPropagation(); send({ type: 'control', action: 'take', camera_id: cid }); };
-    el.onclick = () => send({ type: 'control', action: 'take', camera_id: cid });
+    // virtual PTZ on the phone: drag = pan, wheel = zoom, 1/2/3 = presets ("save" then a number stores one)
+    const cv = el.querySelector('canvas');
+    let drag = null, saveMode = false, moved = false;
+    const post = (body) => fetch(`/api/cameras/${cid}/ptz`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    cv.onmousedown = (e) => { const p = state.snap?.cameras[cid]?.ptz || { x: .5, y: .5, zoom: 1 }; drag = { x0: e.clientX, y0: e.clientY, px: p.x, py: p.y, zoom: p.zoom, w: cv.clientWidth, h: cv.clientHeight }; moved = false; };
+    window.addEventListener('mousemove', (e) => { if (!drag) return; const dx = (e.clientX - drag.x0) / drag.w, dy = (e.clientY - drag.y0) / drag.h; if (Math.abs(dx) + Math.abs(dy) > .01) moved = true; if (moved) post({ x: drag.px - dx / drag.zoom, y: drag.py - dy / drag.zoom, zoom: drag.zoom }); });
+    window.addEventListener('mouseup', () => { drag = null; });
+    el.onclick = () => { if (moved) { moved = false; return; } send({ type: 'control', action: 'take', camera_id: cid }); };
+    cv.addEventListener('wheel', (e) => { e.preventDefault(); const p = state.snap?.cameras[cid]?.ptz || { x: .5, y: .5, zoom: 1 }; post({ x: p.x, y: p.y, zoom: p.zoom * (e.deltaY < 0 ? 1.1 : 0.9) }); }, { passive: false });
+    el.querySelectorAll('.ptz button').forEach((b) => { b.onclick = (e) => { e.stopPropagation(); if (b.dataset.r) post({ x: .5, y: .5, zoom: 1 }); else if (b.dataset.set) { saveMode = !saveMode; b.style.background = saveMode ? '#f5b342' : ''; b.style.color = saveMode ? '#111' : ''; } else if (saveMode) { post({ save: b.dataset.p }); saveMode = false; el.querySelector('[data-set]').style.background = ''; el.querySelector('[data-set]').style.color = ''; toast(`preset ${b.dataset.p} saved for ${cid}`); } else post({ preset: b.dataset.p }).then((r) => { if (!r.ok) toast(`preset ${b.dataset.p} is empty: press save, then ${b.dataset.p}`); }); }; });
     $('multiview').appendChild(el);
     state.camEls[cid] = el;
     return el;
@@ -260,6 +277,14 @@
       const unk = (c.identity.faces || []).filter((f) => !f.person_id).length;
       if (unk) pills.push(`<span class="pill unk">${unk} unknown face${unk > 1 ? 's' : ''}</span>`);
       el.querySelector('.who').innerHTML = pills.join('');
+      const zl = el.querySelector('.zoomlbl'); const z = c.ptz ? c.ptz.zoom : 1;
+      zl.style.display = z > 1.01 ? 'block' : 'none'; zl.textContent = `zoom ${z.toFixed(1)}x`;
+      el.querySelectorAll('.ptz [data-p]').forEach((b) => { b.style.opacity = c.presets && c.presets[b.dataset.p] ? 1 : .45; });
+      let rep = el.querySelector('.replace');
+      if (c.pending_publisher) {
+        if (!rep) { rep = document.createElement('button'); rep.className = 'replace'; rep.onclick = (e) => { e.stopPropagation(); fetch(`/api/cameras/${cid}/approve`, { method: 'POST' }); }; el.appendChild(rep); }
+        rep.textContent = `new device waiting (${c.pending_publisher}) · REPLACE`;
+      } else if (rep) rep.remove();
     }
     for (const cid of Object.keys(state.camEls)) if (!s.cameras[cid]) {
       state.camEls[cid].remove(); delete state.camEls[cid];

@@ -13,6 +13,7 @@ import asyncio
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import threading
@@ -25,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import director as D
@@ -113,7 +114,12 @@ class Camera:
     _win_bytes: int = 0
     client: str = ""
     owner: object | None = None   # token of the connection that currently streams this camera
-    owner_ws: Any = None          # its WebSocket, closed when a newer connection takes over
+    owner_ws: Any = None          # its WebSocket
+    pending_ws: Any = None        # a second publisher waiting for the director to approve a replacement
+    pending_label: str = ""
+    replace_approved: bool = False
+    ptz: dict = field(default_factory=lambda: {"x": 0.5, "y": 0.5, "zoom": 1.0})
+    presets: dict = field(default_factory=dict)
 
     def push(self, jpeg: bytes, now: float) -> None:
         self.seq += 1
@@ -215,6 +221,7 @@ class Show:
         self.last_recording: dict | None = None
         self.recordings_count = 0
         self.pending_block: str | None = None   # why the pending cue waits: "min-shot" | "identity"
+        self.join_code: str = ""
         self.latest_seq = 0                     # newest clause seen by the director
         self._loop_thread: threading.Thread | None = None
         self.dirty = asyncio.Event()
@@ -248,9 +255,29 @@ class Show:
             cam.label = c.get("label") or cam.label
             cam.role = c.get("role") or "guest"
             cam.fixed_person = c.get("fixed_person") or None
+            cam.presets = dict(c.get("presets") or {})
             self.cameras[cid] = cam
         sp = self.data / "script.md"
         self.script_text = sp.read_text() if sp.exists() else ""
+
+    # ------------------------------------------------------------ join code
+    def load_join_code(self) -> str:
+        p = self.data / "join_code.json"
+        if p.exists():
+            try:
+                code = str(json.loads(p.read_text()).get("code", ""))
+                if code.isdigit() and 4 <= len(code) <= 6:
+                    self.join_code = code
+                    return code
+            except Exception:
+                pass
+        return self.rotate_join_code()
+
+    def rotate_join_code(self) -> str:
+        self.join_code = f"{random.SystemRandom().randrange(0, 1_000_000):06d}"
+        (self.data / "join_code.json").write_text(json.dumps({"code": self.join_code, "rotated_wall": time.time()}))
+        self.log_event("camera", "join code rotated: cameras must reconnect with the new code")
+        return self.join_code
 
     def save_roster(self) -> None:
         (self.data / "roster.json").write_text(json.dumps({"people": [
@@ -259,7 +286,7 @@ class Show:
 
     def save_cameras(self) -> None:
         (self.data / "cameras.json").write_text(json.dumps({"cameras": {
-            cid: {"label": c.label, "role": c.role, "fixed_person": c.fixed_person} for cid, c in self.cameras.items()
+            cid: {"label": c.label, "role": c.role, "fixed_person": c.fixed_person, "presets": c.presets} for cid, c in self.cameras.items()
         }}, indent=2))
 
     # ---------------------------------------------------------------- setup
@@ -749,6 +776,7 @@ class Show:
                 "fps": round(c.fps, 1), "kbps": round(c.kbps), "frames": c.frames,
                 "last_frame_age_s": round(now - c.last_frame_mono, 2) if c.latest else None,
                 "identity": tr.snapshot(now, self.tun.identity_max_age_s) if tr else {"faces": [], "present": {}, "frame_size": [0, 0], "age_s": None},
+                "ptz": c.ptz, "presets": {k: v for k, v in c.presets.items()}, "pending_publisher": c.pending_label if c.pending_ws is not None else None,
             }
         prog = self.state.current_camera
         return {
@@ -799,7 +827,8 @@ class Show:
                 "count": self.recordings_count,
             },
             "tunables": {"min_shot_s": self.tun.min_shot_s, "cue_lifetime_s": self.tun.cue_lifetime_s, "camera_stale_s": self.s.camera_stale_s},
-            "setup": {"lan_ip": lan_ip(), "port": self.s.port, "script_chars": len(self.script_text)},
+            "setup": {"lan_ip": lan_ip(), "port": self.s.port, "script_chars": len(self.script_text), "join_code": self.join_code,
+                      "public_url": self.s.public_url},
             "events": self.events[-40:],
         }
 
@@ -876,6 +905,8 @@ async def _startup() -> None:
     show.loop = asyncio.get_running_loop()
     show._loop_thread = threading.current_thread()
     show.load_config()
+    show.load_join_code()
+    log.info("camera join code: %s (shown on /setup; rotate with POST /api/join-code/rotate)", show.join_code)
     show.init_semantics()
     await asyncio.to_thread(show.init_identity)
     show.reenroll()
@@ -923,6 +954,79 @@ async def _shutdown() -> None:
         show.speech.stop()
     if show.mic:
         show.mic.stop()
+
+
+PUBLIC_HOST_SUFFIXES = ("trycloudflare.com",)
+
+
+def _is_public_host(host: str) -> bool:
+    h = (host or "").split(":")[0].lower()
+    if settings.public_url:
+        from urllib.parse import urlparse
+        ph = (urlparse(settings.public_url).hostname or "").lower()
+        if ph and h == ph:
+            return True
+    return any(h == s or h.endswith("." + s) for s in PUBLIC_HOST_SUFFIXES)
+
+
+@app.middleware("http")
+async def public_host_gate(request: Request, call_next):
+    """Through the tunnel only the phone camera page exists. The director, setup page and every API
+    stay on the LAN: a public hostname gets 404 for anything but /cam."""
+    if _is_public_host(request.headers.get("host", "")) and request.url.path not in ("/cam",):
+        return PlainTextResponse("Not Found", status_code=404)
+    return await call_next(request)
+
+
+@app.get("/api/join-code")
+async def api_join_code() -> dict:
+    return {"code": show.join_code}
+
+
+@app.post("/api/join-code/rotate")
+async def api_join_code_rotate() -> dict:
+    return {"code": show.rotate_join_code()}
+
+
+@app.post("/api/cameras/{cid}/approve")
+async def api_camera_approve(cid: str) -> dict:
+    """Let a waiting second publisher replace the live one for this camera id."""
+    cam = show.cameras.get(cid.upper())
+    if cam is None or cam.pending_ws is None:
+        raise HTTPException(404, "no publisher waiting for this camera")
+    cam.replace_approved = True
+    show.log_event("camera", f"{cid.upper()}: replacement approved by the director")
+    show.mark_dirty()
+    return {"ok": True}
+
+
+@app.post("/api/cameras/{cid}/ptz")
+async def api_camera_ptz(cid: str, body: dict) -> dict:
+    """Virtual pan/zoom on the phone: {x, y, zoom} in 0..1 / 1..3, or {preset: "1"}, or {save: "1"}."""
+    cam = show.cameras.get(cid.upper())
+    if cam is None:
+        raise HTTPException(404, "unknown camera")
+    if "save" in body:
+        cam.presets[str(body["save"])] = dict(cam.ptz)
+        show.save_cameras()
+        return {"ok": True, "presets": cam.presets}
+    if "preset" in body:
+        target = cam.presets.get(str(body["preset"]))
+        if target is None:
+            raise HTTPException(404, "preset not set")
+    else:
+        target = {"x": float(body.get("x", cam.ptz["x"])), "y": float(body.get("y", cam.ptz["y"])), "zoom": float(body.get("zoom", cam.ptz["zoom"]))}
+    target = {"x": min(1.0, max(0.0, target["x"])), "y": min(1.0, max(0.0, target["y"])), "zoom": min(3.0, max(1.0, target["zoom"]))}
+    cam.ptz = target
+    sent = False
+    if cam.owner_ws is not None:
+        try:
+            await cam.owner_ws.send_text(json.dumps({"type": "ptz", "cam": cam.id, **target}))
+            sent = True
+        except Exception as e:
+            log.debug("ptz send failed: %s", e)
+    show.mark_dirty()
+    return {"ok": True, "ptz": target, "delivered": sent}
 
 
 @app.get("/")
@@ -1139,6 +1243,12 @@ async def ws_ingest(ws: WebSocket) -> None:
         await ws.send_text(json.dumps({"type": "error", "error": "cam query param required, e.g. /ingest?cam=B"}))
         await ws.close()
         return
+    code = (ws.query_params.get("code") or "").strip()
+    if code != show.join_code:
+        await ws.send_text(json.dumps({"type": "error", "error": "wrong or missing join code (see the director's /setup page)"}))
+        await ws.close(code=4401, reason="join code")
+        show.log_event("camera", f"{cam_id}: connection refused (bad join code) from {ws.client.host if ws.client else '?'}")
+        return
     cam = show.cameras.get(cam_id)
     if cam is None:
         cam = Camera(cam_id, label or f"Camera {cam_id}", role if role in ("wide", "host", "guest") else "guest")
@@ -1147,17 +1257,55 @@ async def ws_ingest(ws: WebSocket) -> None:
         show.save_cameras()
     elif label and cam.label == f"Camera {cam_id}":
         cam.label = label[:40]  # a label saved on /setup wins over what the laptop announces
+    # One publisher per camera id. While a live publisher streams, a second one waits in STANDBY
+    # until the director approves the replacement on the multiview (or the live one drops).
+    if cam.owner_ws is not None and cam.connected and cam.healthy(time.monotonic(), show.s.camera_stale_s):
+        if cam.pending_ws is not None:
+            await ws.send_text(json.dumps({"type": "error", "error": "another publisher is already waiting for this camera id"}))
+            await ws.close(code=4409, reason="busy")
+            return
+        cam.pending_ws = ws
+        cam.pending_label = f"{ws.client.host if ws.client else '?'} {label}".strip()
+        cam.replace_approved = False
+        show.log_event("camera", f"{cam_id}: a second publisher is waiting for approval ({cam.pending_label})")
+        show.mark_dirty()
+        await ws.send_text(json.dumps({"type": "standby", "cam": cam_id, "reason": "camera id in use; waiting for the director to approve the replacement"}))
+        try:
+            deadline = time.monotonic() + 600
+            while time.monotonic() < deadline:
+                try:
+                    msg = await asyncio.wait_for(ws.receive(), timeout=1.0)
+                    if msg.get("type") == "websocket.disconnect":
+                        return
+                except asyncio.TimeoutError:
+                    pass
+                live = cam.owner_ws is not None and cam.connected and cam.healthy(time.monotonic(), show.s.camera_stale_s)
+                if cam.replace_approved or not live:
+                    break
+            else:
+                await ws.send_text(json.dumps({"type": "error", "error": "standby timed out"}))
+                await ws.close(code=4408, reason="standby timeout")
+                return
+        finally:
+            if cam.pending_ws is ws:
+                cam.pending_ws = None
+                cam.pending_label = ""
+        show.log_event("camera", f"{cam_id}: replacement {'approved' if cam.replace_approved else 'takes over (live publisher gone)'}")
+        cam.replace_approved = False
     token = object()
     old_ws = cam.owner_ws
     cam.owner = token
     cam.owner_ws = ws
     cam.connected = True
-    if old_ws is not None:  # a newer laptop/browser took this id: the older stream is closed, never interleaved
-        show.log_event("camera", f"{cam_id}: new connection replaces the previous one")
+    if old_ws is not None:
         try:
-            await old_ws.close(code=4000, reason="replaced by a newer connection for this camera id")
+            await old_ws.close(code=4000, reason="replaced by an approved publisher for this camera id")
         except Exception:
             pass
+    try:
+        await ws.send_text(json.dumps({"type": "ptz", "cam": cam_id, **cam.ptz}))  # current framing on (re)connect
+    except Exception:
+        pass
     cam.client = ws.client.host if ws.client else ""
     show.log_event("camera", f"{cam_id} connected from {cam.client}")
     try:
@@ -1202,6 +1350,9 @@ async def ws_ingest(ws: WebSocket) -> None:
 
 @app.websocket("/ui")
 async def ws_ui(ws: WebSocket) -> None:
+    if _is_public_host(ws.headers.get("host", "")):  # the director socket never exists through the tunnel
+        await ws.close(code=4404, reason="not found")
+        return
     await ws.accept()
     client = UIClient(ws)
     show.ui_clients.add(client)

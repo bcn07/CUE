@@ -37,10 +37,14 @@
 <header><h1><span>●</span> CUE setup</h1><a href="/">→ director view</a></header>
 <main>
   <div class="card wide">
-    <h2>1 · Start the cameras (one command per laptop)</h2>
-    <div class="hint">Same Wi-Fi as this MacBook. Copy the line for each laptop. <code>--cam</code> is the camera id used everywhere below.</div>
+    <h2>1 · Start the cameras <span class="hint" style="text-transform:none;letter-spacing:0">join code <b id="joinCode" style="color:#e8edf2;font-size:16px;font-family:var(--mono)">…</b> <button class="small" id="rotate">rotate</button></span></h2>
+    <div class="hint">Every camera needs the join code. Rotating it disconnects all cameras until they reconnect with the new one.</div>
+    <div class="hint" style="margin-top:8px"><b>iPhones / phones</b> (needs the HTTPS tunnel: run <code>cloudflared tunnel --url http://localhost:PORT</code> on this Mac and paste the address it prints):</div>
+    <input type="text" id="publicUrl" placeholder="https://something.trycloudflare.com" style="margin:6px 0">
+    <pre id="phoneLinks">paste the tunnel address above</pre>
+    <div class="hint"><b>Laptops</b> on the same Wi-Fi as this MacBook (copy the line for each one; <code>--cam</code> is the camera id used everywhere below):</div>
     <pre id="camCmds">loading…</pre>
-    <div class="hint">Windows: <code>camera\run_camera.bat --server ws://IP:PORT --cam B</code>. No Python on that laptop? Open <code id="camUrl"></code> in Chrome instead (see the note on that page).</div>
+    <div class="hint">Windows: <code>camera\run_camera.bat --server ws://IP:PORT --cam B --code CODE</code>. No Python on a laptop? It can open the phone link in Chrome (over the tunnel) instead.</div>
   </div>
 
   <div class="card">
@@ -92,10 +96,12 @@
   function setDirty(v) { camsDirty = v; $('camDirty').textContent = v ? 'unsaved changes' : ''; }
   async function load() {
     snap = await (await fetch('/api/state')).json();
-    const ip = snap.setup.lan_ip, port = snap.setup.port;
+    const ip = snap.setup.lan_ip, port = snap.setup.port, code = snap.setup.join_code || '';
     const ids = Object.keys(snap.cameras);
-    $('camCmds').textContent = (ids.length ? ids : ['A', 'B', 'C']).map((c) => `./camera/run_camera.sh --server ws://${ip}:${port} --cam ${c}     # ${snap.cameras[c]?.label || 'Camera ' + c}`).join('\n');
-    $('camUrl').textContent = `http://${ip}:${port}/cam?cam=B`;
+    $('joinCode').textContent = code;
+    $('camCmds').textContent = (ids.length ? ids : ['A', 'B', 'C']).map((c) => `./camera/run_camera.sh --server ws://${ip}:${port} --cam ${c} --code ${code}     # ${snap.cameras[c]?.label || 'Camera ' + c}`).join('\n');
+    if (!$('publicUrl').value && snap.setup.public_url) $('publicUrl').value = snap.setup.public_url;
+    renderPhoneLinks();
     $('people').innerHTML = snap.roster.map((p) => `<div class="person ${p.is_host ? 'host' : ''}">
       <img src="/api/people/${encodeURIComponent(p.id)}/thumb?v=${p.photos}" onerror="this.style.opacity=.2">
       <div class="n">${esc(p.name)}${p.is_host ? ' · HOST' : ''}</div>
@@ -108,6 +114,14 @@
     if (!camsDirty) renderCams(snap.cameras); else updateCamStatus(snap.cameras);
     loadRecordings();
   }
+  function renderPhoneLinks() {
+    const base = ($('publicUrl').value || '').trim().replace(/\/+$/, '');
+    const code = snap?.setup?.join_code || '';
+    const ids = Object.keys(snap?.cameras || {});
+    $('phoneLinks').textContent = base ? (ids.length ? ids : ['A', 'B', 'C']).map((c) => `${base}/cam?cam=${c}&code=${code}     # ${snap.cameras[c]?.label || 'Camera ' + c}: open in Safari, tap Start`).join('\n') : 'paste the tunnel address above';
+  }
+  $('publicUrl').addEventListener('input', renderPhoneLinks);
+  $('rotate').onclick = async () => { if (confirm('Rotate the join code? Every camera must reconnect with the new one.')) { await fetch('/api/join-code/rotate', { method: 'POST' }); load(); } };
   function statusHtml(c) { return c ? (c.healthy ? `<span style="color:#2ecc71">● live ${c.fps} fps</span>` : (c.connected ? '<span style="color:#f5b342">● stalled</span>' : '<span style="color:#93a1b1">○ offline</span>')) : '<span style="color:#93a1b1">○ new</span>'; }
   function renderCams(cams) {
     const people = snap.roster;

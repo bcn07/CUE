@@ -130,6 +130,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--server", default=os.environ.get("CUE_SERVER", ""), help="ws://<director-ip>:8000")
     ap.add_argument("--cam", default=os.environ.get("CUE_CAM", "B"), help="camera id: A, B, C ...")
+    ap.add_argument("--code", default=os.environ.get("CUE_CODE", ""), help="join code shown on the director's /setup page (required)")
     ap.add_argument("--label", default="", help="display label used when the camera is first created, e.g. 'Stage left'")
     ap.add_argument("--role", default="", choices=["", "wide", "host", "guest"], help="initial role (setup page can change it)")
     ap.add_argument("--device", type=int, default=int(os.environ.get("CUE_DEVICE", "0")), help="webcam index (see --list-devices)")
@@ -159,7 +160,9 @@ def main():
         server += ":8000"
     cam_id = a.cam.strip().upper()
     from urllib.parse import quote
-    url = "%s/ingest?cam=%s" % (server, quote(cam_id))
+    if not a.code:
+        ap.error("--code <join code> is required (it is printed on the director's /setup page)")
+    url = "%s/ingest?cam=%s&code=%s" % (server, quote(cam_id), quote(a.code))
     if a.label:
         url += "&label=" + quote(a.label)
     if a.role:
@@ -187,7 +190,11 @@ def main():
                         hello["label"] = a.label
                     ws.send(json.dumps(hello))
                     try:
-                        say("director:", ws.recv(timeout=3))
+                        first = ws.recv(timeout=3)
+                        say("director:", first)
+                        if '"error"' in str(first) and "join code" in str(first):
+                            say("wrong join code: check the director's /setup page", file=sys.stderr)
+                            return 2
                     except Exception:
                         pass
                     backoff = 1.0

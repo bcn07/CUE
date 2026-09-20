@@ -73,6 +73,7 @@ class Settings:
     identity_margin: float = 0.06
     identity_confirmations: int = 2
 
+    public_url: str = ""                # e.g. https://<words>.trycloudflare.com (shown on /setup for the phones)
     team_api: str = ""                  # e.g. http://127.0.0.1:8000 (the team's apps/api)
     team_event_id: str = ""
     team_producer_secret: str = ""
@@ -139,6 +140,7 @@ def load_settings() -> Settings:
         cue_lifetime_s=_float("CUE_CUE_LIFETIME_S", 3.0),
         camera_stale_s=_float("CUE_CAMERA_STALE_S", 1.5),
         record_fps=min(60.0, max(1.0, _float("CUE_RECORD_FPS", 15.0))),
+        public_url=env.get("CUE_PUBLIC_URL", "").strip().rstrip("/"),
         team_api=env.get("CUE_TEAM_API", "").strip().rstrip("/"),
         team_event_id=env.get("CUE_TEAM_EVENT_ID", "").strip(),
         team_producer_secret=(env.get("CUE_TEAM_PRODUCER_SECRET") or env.get("CUE_PRODUCER_SECRET") or "").strip(),

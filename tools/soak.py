@@ -51,10 +51,13 @@ SCRIPT = [
 ]
 
 
+JOIN_CODE = {"code": ""}
+
+
 class FakeCam(threading.Thread):
     def __init__(self, ws_base: str, cam: str, image: Path | None, fps: float = 15):
         super().__init__(daemon=True)
-        self.url = f"{ws_base}/ingest?cam={cam}&label=Soak%20{cam}"
+        self.url = f"{ws_base}/ingest?cam={cam}&label=Soak%20{cam}&code={JOIN_CODE['code']}"
         self.cam, self.fps = cam, fps
         self.stop_ev = threading.Event()
         self.sent = 0
@@ -175,6 +178,7 @@ def main() -> int:
     c = httpx.Client(base_url=base, timeout=30, limits=httpx.Limits(max_keepalive_connections=0))
     health = c.get("/api/health").json()
     print("server:", health)
+    JOIN_CODE["code"] = c.get("/api/join-code").json()["code"]
     if "version" not in health:
         print("this server does not report a version: it is probably a stale process from an earlier run. Aborting."); return 1
     report: dict = {"server": base, "started": time.strftime("%Y-%m-%d %H:%M:%S"), "minutes": a.minutes, "health": health}
