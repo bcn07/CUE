@@ -31,8 +31,8 @@ from fastapi.staticfiles import StaticFiles
 from . import director as D
 from .assembler import Clause, Interim, UtteranceEnd
 from .config import Settings, load_settings
-from .identity import (FaceEngine, Gallery, IdentityWorker, PresenceTracker, enroll_people, models_present,
-                       reference_thumbnail)
+from .identity import (FaceEngine, Gallery, IdentityWorker, PresenceTracker, enroll_people, ensure_decodable,
+                       models_present, reference_thumbnail)
 from .bridge import TeamControlBridge, parse_camera_map
 from .recorder import Recorder, list_recordings
 from .semantics import Action, Cue, LLMParser, Person, Roster, Semantics
@@ -1028,8 +1028,10 @@ async def api_add_person(name: str = Form(...), aliases: str = Form(""), role: s
         ext = Path(up.filename or "photo.jpg").suffix.lower() or ".jpg"
         if ext not in (".jpg", ".jpeg", ".png", ".webp"):
             ext = ".jpg"
-        (pdir / f"{int(time.time())}_{i}{ext}").write_bytes(data)
+        dest = pdir / f"{int(time.time())}_{i}{ext}"
+        dest.write_bytes(data)
         saved += 1
+        await asyncio.to_thread(ensure_decodable, dest)  # HEIC from phones -> JPEG
     await asyncio.to_thread(show.refresh_context)
     rep = show.enroll_report.get(pid, {})
     return {"ok": True, "id": pid, "saved_photos": saved, "faces_enrolled": rep.get("faces", 0), "failed": rep.get("failed", [])}

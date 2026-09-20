@@ -135,6 +135,42 @@ class Gallery:
         return pid, best, margin, "CANDIDATE"
 
 
+def ensure_decodable(img_path: Path) -> bool:
+    """Phones upload HEIC (often under a .jpg name); OpenCV cannot read it. Convert in place to a
+    real JPEG with macOS `sips` (or Pillow + pillow-heif if present). Returns True when readable."""
+    import shutil
+    import subprocess
+    if cv2.imread(str(img_path)) is not None:
+        return True
+    tmp = img_path.with_suffix(".converted.jpg")
+    ok = False
+    if shutil.which("sips"):
+        r = subprocess.run(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "90", str(img_path), "--out", str(tmp)],
+                           capture_output=True, text=True, timeout=60)
+        ok = r.returncode == 0 and tmp.exists() and cv2.imread(str(tmp)) is not None
+    if not ok:
+        try:
+            from PIL import Image
+            try:
+                import pillow_heif  # type: ignore
+                pillow_heif.register_heif_opener()
+            except Exception:
+                pass
+            Image.open(img_path).convert("RGB").save(tmp, "JPEG", quality=90)
+            ok = cv2.imread(str(tmp)) is not None
+        except Exception:
+            ok = False
+    if ok:
+        target = img_path if img_path.suffix.lower() in (".jpg", ".jpeg") else img_path.with_suffix(".jpg")
+        tmp.replace(target)
+        if target != img_path and img_path.exists():
+            img_path.unlink()
+        log.info("converted %s to JPEG (was not decodable, probably HEIC)", img_path.name)
+        return True
+    tmp.unlink(missing_ok=True)
+    return False
+
+
 def enroll_people(engine: FaceEngine, people_dir: Path) -> tuple[dict[str, list[np.ndarray]], dict[str, dict]]:
     """people_dir/<person_id>/*.jpg -> one embedding per photo (largest face).
     Returns (embeddings, report[person_id] = {photos, faces, failed:[filenames]})."""
@@ -149,6 +185,11 @@ def enroll_people(engine: FaceEngine, people_dir: Path) -> tuple[dict[str, list[
             if img_path.suffix.lower() not in IMAGE_EXTS:
                 continue
             rep["photos"] += 1
+            if not ensure_decodable(img_path):
+                rep["failed"].append(img_path.name + " (unreadable: not JPEG/PNG, and conversion failed)")
+                continue
+            if img_path.suffix.lower() not in (".jpg", ".jpeg") and not img_path.exists():
+                img_path = img_path.with_suffix(".jpg")
             img = cv2.imread(str(img_path))
             if img is None:
                 rep["failed"].append(img_path.name)
@@ -168,6 +209,8 @@ def enroll_people(engine: FaceEngine, people_dir: Path) -> tuple[dict[str, list[
 def reference_thumbnail(img_path: Path, size: int = 256) -> bytes | None:
     """Small JPEG of the whole photo (for the setup page and the VLM fallback)."""
     img = cv2.imread(str(img_path))
+    if img is None and ensure_decodable(img_path):
+        img = cv2.imread(str(img_path))
     if img is None:
         return None
     h, w = img.shape[:2]
