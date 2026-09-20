@@ -129,7 +129,7 @@
   }
   $('publicUrl').addEventListener('input', renderPhoneLinks);
   $('rotate').onclick = async () => { if (confirm('Rotate the join code? Every camera must reconnect with the new one.')) { await fetch('/api/join-code/rotate', { method: 'POST' }); load(); } };
-  function statusHtml(c) { return c ? (c.healthy ? `<span style="color:#2ecc71">● live ${c.fps} fps</span>${c.scene && c.scene.objects && c.scene.objects.length ? ' <span style="color:#93a1b1">sees ' + esc(c.scene.objects.slice(0, 4).join(', ')) + '</span>' : ''}` : (c.connected ? '<span style="color:#f5b342">● stalled</span>' : '<span style="color:#93a1b1">○ offline</span>')) : '<span style="color:#93a1b1">○ new</span>'; }
+  function statusHtml(c) { return c ? (c.healthy ? `<span style="color:#2ecc71">● live ${c.fps} fps</span>${c.scene && c.scene.objects && c.scene.objects.length ? ' <span style="color:#93a1b1">sees ' + esc(c.scene.objects.slice(0, 4).join(', ')) + '</span>' : ''}` : (c.connected ? (c.paused ? '<span style="color:#f5b342">● phone paused (locked / background)</span>' : '<span style="color:#f5b342">● stalled</span>') : '<span style="color:#93a1b1">○ offline</span>')) : '<span style="color:#93a1b1">○ new</span>'; }
   function renderCams(cams) {
     const people = snap.roster;
     $('cams').innerHTML = Object.entries(cams).map(([cid, c]) => `<tr data-cid="${esc(cid)}">

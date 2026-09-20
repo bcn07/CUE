@@ -964,6 +964,7 @@ class Show:
                 "ptz": c.ptz, "presets": {k: v for k, v in c.presets.items()}, "pending_publisher": c.pending_label if c.pending_ws is not None else None,
                 "scene": ({k: v for k, v in self.ws.scene[cid].items() if k not in ("at", "wall")} | {"age_s": round(now - self.ws.scene[cid]["at"], 1)})
                          if cid in self.ws.scene else None,
+                "paused": bool(self.livekit is not None and cid in self.livekit.paused),
             }
         prog = self.state.current_camera
         return {

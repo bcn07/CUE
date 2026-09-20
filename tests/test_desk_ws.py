@@ -276,3 +276,11 @@ def test_cameras_message_lists_existing_tiles_in_desk_order_and_only_when_change
     client.offer_state(_json.dumps(snap(cameras=cams)))
     msgs = [m for m in map(_json.loads, client.texts) if m["type"] == "cameras"]
     assert msgs == [{"type": "cameras", "cameras": ["CAM-HOST", "CAM-GUEST", "CAM-WIDE"]}]   # the audience tiles are gone
+
+
+def test_camera_state_says_when_the_phone_paused_its_camera():
+    cams = {"D": {"role": "guest", "connected": True, "healthy": False, "paused": True, "fps": 6.9},
+            "E": {"role": "wide", "connected": True, "healthy": False, "paused": False, "fps": 0}}
+    st = dw.camera_states({"cameras": cams}, dw.camera_map(cams))
+    assert st["CAM-GUEST"] == {"ready": False, "note": "Phone paused (locked or in background)"}
+    assert st["CAM-WIDE"] == {"ready": False, "note": "Stalled"}

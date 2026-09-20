@@ -205,6 +205,8 @@ def camera_states(snapshot: dict, cmap: dict[str, str]) -> dict[str, dict]:
             objects = (cam.get("scene") or {}).get("objects") or []
             if objects:
                 note += " · " + ", ".join(str(o) for o in objects[:3])
+        elif connected and cam.get("paused"):
+            note = "Phone paused (locked or in background)"
         elif connected:
             note = "Stalled"
         else:

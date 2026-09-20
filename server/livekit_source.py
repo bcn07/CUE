@@ -102,6 +102,7 @@ class LiveKitSource:
         self.url, self.api_key, self.api_secret, self.room_name = url, api_key, api_secret, room
         self.get_camera, self.on_frame, self.log_event, self.mark_dirty = get_camera, on_frame, log_event, mark_dirty
         self.camera_stale_s, self.fps, self.jpeg_quality, self.max_width = camera_stale_s, fps, jpeg_quality, max_width
+        self.paused: dict[str, float] = {}   # cam id -> when its phone muted the video track
         self.room: Any = None
         self.stats: dict = {"configured": True, "room": room, "connected": False, "participants": 0, "frames": 0,
                             "reconnects": 0, "last_error": "", "publishers": {}, "state": "idle", "reconciles": 0, "forced_reconnects": 0}
@@ -149,6 +150,24 @@ class LiveKitSource:
             @room.on("participant_disconnected")
             def _on_leave(participant):
                 self._publisher_gone(participant.identity, "left the room")
+
+            # A phone that locks its screen or sends Safari to the background keeps its place in the
+            # room but stops sending video; the camera then shows "no frames". Say why on the pages.
+            @room.on("track_muted")
+            def _on_muted(participant, publication):
+                cid = cam_id_for(participant.identity, participant.metadata)
+                if cid and getattr(publication, "kind", None) == rtc.TrackKind.KIND_VIDEO:
+                    self.paused[cid] = time.monotonic()
+                    self.log_event("camera", f"{cid}: the phone paused its camera (screen locked or browser in the background); wake it and reopen the page")
+                    self.mark_dirty()
+
+            @room.on("track_unmuted")
+            def _on_unmuted(participant, publication):
+                cid = cam_id_for(participant.identity, participant.metadata)
+                if cid and cid in self.paused:
+                    self.paused.pop(cid, None)
+                    self.log_event("camera", f"{cid}: the phone resumed its camera")
+                    self.mark_dirty()
 
             @room.on("disconnected")
             def _on_disc(*args):
