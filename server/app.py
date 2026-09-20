@@ -1200,7 +1200,7 @@ async def _shutdown() -> None:
         show.mic.stop()
 
 
-PUBLIC_HOST_SUFFIXES = ("trycloudflare.com",)
+PUBLIC_HOST_SUFFIXES = ("trycloudflare.com", "ngrok-free.dev", "ngrok-free.app", "ngrok.app", "ngrok.io", "ngrok.dev")
 
 
 def _is_public_host(host: str) -> bool:
