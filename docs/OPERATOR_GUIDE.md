@@ -352,7 +352,7 @@ correctly. Not verified: a browser showing the team GUI cutting LiveKit video fr
 .venv/bin/python -m pytest -q                       # 201 tests: assembler, rules, director, planner, dialogue, observers, scene tags, pending cues, identity, recorder, speech, team bridge, desk adapter, sign-up sync, end-to-end
 ./run_server.sh                                     # terminal 1
 .venv/bin/python tools/fake_camera.py --cam A --pattern                          # terminal 2
-.venv/bin/python tools/fake_camera.py --cam B --image tests/fixtures/obama2.jpg  # terminal 3
+.venv/bin/python tools/fake_camera.py --cam B --image tests/fixtures/obama2.jpg --jitter  # terminal 3; --jitter: a still photo would count as a frozen camera
 .venv/bin/python tools/say.py "Please welcome Barack Obama!"                     # after enrolling Barack on /setup
 CUE_PORT=8001 CUE_DATA_DIR=/tmp/cue-soak ./run_server.sh                         # a scratch director for the soak (terminal 4)
 .venv/bin/python tools/soak.py --server http://127.0.0.1:8001 --minutes 3 --setup  # soak + failover test; --setup enrols two test people and rewrites cameras, so never point it at your real show

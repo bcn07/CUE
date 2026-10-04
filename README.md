@@ -133,13 +133,17 @@ Then:
 Without cameras, a mic or keys:
 
 ```bash
-.venv/bin/python -m pytest -q                                                    # 201 tests
-./run_server.sh                                                                  # terminal 1
-.venv/bin/python tools/fake_camera.py --cam A --pattern                          # terminal 2
-.venv/bin/python tools/fake_camera.py --cam B --image tests/fixtures/obama2.jpg  # terminal 3
+.venv/bin/python -m pytest -q                                                             # 201 tests
+./run_server.sh                                                                           # terminal 1
+.venv/bin/python tools/fake_camera.py --cam A --pattern                                   # terminal 2
+.venv/bin/python tools/fake_camera.py --cam B --image tests/fixtures/obama2.jpg --jitter  # terminal 3
 # on /setup, enrol "Barack Obama" with tests/fixtures/obama.jpg, then:
 .venv/bin/python tools/say.py "Please welcome Barack Obama!"
 ```
+
+`--jitter` moves the photo a few pixels every frame. Without it the director
+treats the unchanging picture as a frozen camera and soon cuts back to the wide
+shot.
 
 The [operator guide](docs/OPERATOR_GUIDE.md) covers everything else: every
 setup step, iPhone setup, virtual pan and zoom, the desk, guest sign-up,
@@ -174,9 +178,12 @@ is the design spec for the planner.
 - **Trusted network only.** The director, setup page and API have no login.
   Cameras need a join code, and a public tunnel exposes only the camera page,
   but anyone on the LAN can reach the control surface.
-- `tools/eval_llm.py` reads the evaluation corpora from the team repo
-  (`scripts/data/` in [chocoHacks33/CUE](https://github.com/chocoHacks33/CUE)),
-  cloned next to this one as `../hackmit_2026_cue`.
+- `tools/eval_llm.py` needs the team repo, which holds the evaluation corpora
+  and roster (`scripts/data/` and `apps/api/src/cue_api/semantics/roster.json`
+  in [chocoHacks33/CUE](https://github.com/chocoHacks33/CUE)). Clone it next to
+  this one: `git clone https://github.com/chocoHacks33/CUE.git ../hackmit_2026_cue`.
+  Without it, one test (the rules against the team's adversarial corpus) is
+  skipped.
 
 ## Team and credits
 
