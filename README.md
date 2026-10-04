@@ -1,501 +1,232 @@
-# CUE one-shot: context-aware live director (standalone experiment)
+# CUE
 
-Three laptops stream their webcams to one MacBook. The MacBook listens to the
-host's mic, turns every finished clause into a *meaning* (who / intent / timing),
-recognises who is on which camera from the photos you uploaded, and a
-deterministic director cuts the broadcast: **SHOW** the person being addressed,
-**WIDE** for groups, **HOST** when the host takes back the floor, **HOLD** when
-unsure. Deciding *not* to cut is a feature. The program output, the master audio
-and every cut are recorded.
+CUE is an AI live director: it listens to the host, works out who the show is
+about at that moment, and cuts between cameras on its own. When it is not sure,
+it holds the shot.
 
-This folder is self-contained. It does not touch the team repo and is not pushed anywhere.
+**HackMIT 2026 (MIT, 19–20 September 2026): 2nd place in the Deepgram track**
+(Deepgram challenge "Build Something Worth Talking To"). This repository is the
+build the judges saw: the `livekit` branch at commit `fa1f474`.
+
+## What it does
+
+Phones (or laptops) stream video to one Mac. The Mac transcribes the host's
+microphone with Deepgram and turns each finished clause into a *meaning*: who is
+being talked about, what the host intends, and whether it is happening now. It
+recognises who is on which camera from enrolment photos. A director written in
+plain code then picks the shot:
+
+- **SHOW** the person being introduced or addressed
+- **WIDE** for groups, applause, or when the right camera is not available
+- **HOST** when the host takes the floor back
+- **HOLD** when the meaning is unclear, the person is not on camera yet, or
+  cutting would be too soon after the last cut
+
+The programme output, the host's audio and every cut (with its reason) are
+recorded. An operator can watch the reasoning live, take over, or run CUE in
+ASSIST mode, where every cut becomes a suggestion to accept with one click.
+
+## How a cut happens
+
+Take "Please welcome Sarah Tan to the stage."
+
+1. **Speech.** Deepgram (Flux or nova-3) streams the host's mic and finalises
+   the clause. Roster names are sent as key terms so they are spelled right.
+2. **Meaning.** A rule pass answers in about 0.1 ms when the pattern is
+   unambiguous ("welcome" + a name as its object) and fires the cut at once. A
+   local LLM (`qwen2.5:3b` on Ollama, JSON-schema output, about 1 s) follows and
+   can correct it, and it catches phrasings the rules do not know. A
+   deterministic guard turns anything past, future, negated, hypothetical, a
+   question about someone, or an injected instruction into HOLD, so "Sarah will
+   join us later" never cuts.
+3. **Identity.** Every camera's latest frame is checked about 7 times a second
+   with OpenCV's YuNet face detector and SFace embeddings (cosine ≥ 0.363, a
+   0.06 margin over the runner-up, two consistent hits). An unknown or ambiguous
+   face stays unknown.
+4. **Decision.** `server/director.py` cuts to a healthy camera that has a fresh
+   (≤ 4 s) confirmed match for Sarah. Without one it falls back to a fixed
+   person-to-camera mapping, then the wide shot. A minimum shot length (2.5 s),
+   a cue lifetime (3 s) and a rapid-cut guard stop it from flapping. A
+   correction ("Sarah, actually Daniel") re-cuts once.
+5. **Context.** A world state per camera (who is visible, mouth motion, shot
+   type, frozen frames) and a planner with readable reason codes handle the
+   cases a name alone cannot: a question without a name goes to the addressee,
+   "a round of applause" goes to the audience camera, "here's how it works"
+   goes to the demo camera, and "mm-hmm" never cuts.
+
+## Architecture
 
 ```
-laptop A  ─┐  JPEG frames over WebSocket (LAN)
-laptop B  ─┼────────────►  MacBook  server/app.py  ──►  http://localhost:8000  (program + judge panel)
-laptop C  ─┘                 │  mic ──► Deepgram ──► clauses ──► rules fast path + LLM meaning
-                             │  frames ──► YuNet + SFace (local, ~12 ms/frame) ──► "camera B shows Sarah"
-                             │  director.py (pure code) ──► SHOW / WIDE / HOST / HOLD
-                             └─ recorder.py ──► data/recordings/<ts>/program.mp4 + cuts.jsonl
+Phones (Safari, /cam) ──WebRTC──► LiveKit Cloud room ──┐
+Laptops (camera/stream_camera.py) ──JPEG over WS──────┤
+                                                       ▼
+                      Director Mac: FastAPI app (server/app.py)
+
+  host mic ──► Deepgram STT ──► clauses ──► rules fast path + local LLM (Ollama) ──► cue
+  frames ────► YuNet + SFace ──► who is on which camera ───────────┐
+         └───► observers (mouth motion, shot type, frozen frames) ─┴─► world state
+
+  cue + world state ──► planner (scores, reason codes) ──► director (pure code)
+                                                           SHOW / WIDE / HOST / HOLD
+                                                                       │
+              operator desk (/desk) · setup (/setup) · recorder (program.mp4, audio.wav, cuts.jsonl)
 ```
 
-## 0. What you need
+Phone video goes through LiveKit; the director joins the room subscribe-only
+and re-encodes frames into the same camera path the laptops use. The master
+audio is always the Mac's microphone, never a camera.
 
-| Where | Needs |
-|---|---|
-| MacBook (director) | Python 3.10+ (uv or python3), this folder, Wi-Fi shared with the laptops, `OPENAI_API_KEY` + `DEEPGRAM_API_KEY` in `.env`, ffmpeg (optional, for muxing audio into the recording) |
-| Each camera laptop | Python 3.8+ with `pip`, a webcam, same Wi-Fi. The launcher installs its own 2 packages. |
+## Measured results
 
-Keys are read from `cue_oneshot/.env` (created from `.env.example` on first run); a name that is
-still empty is also looked up in the team repo's `../hackmit_2026_cue/.env`, and the startup log says
-which file each key came from (never the value). If a key is missing the system still runs in a
-degraded mode and says so on screen: no OpenAI key → the
-deterministic rule interpreter only (no LLM, no VLM); no Deepgram key → no live transcription, use
-the typed test input (labelled "typed", never shown as live speech).
+All measured on one M2 Pro MacBook (16 GB) on 19–20 September 2026.
 
-## 1. MacBook: start the director
+| What | Result | Source |
+|---|---|---|
+| Interpreter, held-out set (40 lines, run once) | `qwen2.5:3b`: 38/40 (95%), **0 wrong cuts**, 1.0 s p50 / 1.1 s p95 | [`reports/llm_eval_heldout_qwen2.5-3b_20260919_202004.json`](reports/llm_eval_heldout_qwen2.5-3b_20260919_202004.json) |
+| Interpreter, dev set (58 scorable lines) | `qwen2.5:3b`: 54/58 (93%), 2 wrong cuts | [`reports/llm_eval_adversarial_qwen2.5-3b_20260919_201924.json`](reports/llm_eval_adversarial_qwen2.5-3b_20260919_201924.json) |
+| End of speech to cut, live mic | 1.17 s with nova-3 (one introduction played by text-to-speech into the Mac's mic; the LLM confirmed 1.06 s later) | [operator guide, "Evidence so far"](docs/OPERATOR_GUIDE.md#evidence-so-far-this-macbook-no-keys) |
+| Deepgram Flux finalisation | final clause 0.85–1.0 s after the audio ended (nova-3: 0.55 s, but nova-3 can split a sentence at a pause) | [operator guide](docs/OPERATOR_GUIDE.md#evidence-so-far-this-macbook-no-keys) |
+| 3-minute soak | 30/30 lines correct, 0 wrong cuts, 20/20 expected cuts, failover 0.32 s after the live camera died | [`reports/soak_2026-09-19_3min.md`](reports/soak_2026-09-19_3min.md) |
+| Face identity | 11.8 ms per frame on average over 3,545 frames (decode + detect + embed) | [`reports/soak_2026-09-19_3min.md`](reports/soak_2026-09-19_3min.md) |
+| Tests | 201 unit and end-to-end tests | [`tests/`](tests/) |
+
+The other models tried (`llama3.2:3b`, `qwen2.5:7b`) are in the same
+`reports/` folder. The 7B model matched the 3B on the held-out set but took
+2.3 s p50, too slow for a 3 s cue lifetime. The soak used typed lines, the
+rules interpreter only and synthetic cameras streaming the test photos; its cut
+log and recording summary are in `reports/` too.
+
+## Running it
+
+Developed and tested on macOS (Apple Silicon) with Python 3.12. You need
+Python 3.10+, [Ollama](https://ollama.com) for the local interpreter, a
+[Deepgram](https://deepgram.com) API key for live speech, and optionally a
+[LiveKit Cloud](https://livekit.io) project for phone cameras and ffmpeg for
+the recording's audio mux.
 
 ```bash
-cd cue_oneshot
-cp .env.example .env      # first time only: paste OPENAI_API_KEY and DEEPGRAM_API_KEY
-./run_server.sh
+brew install ollama ffmpeg          # ffmpeg is optional
+git clone https://github.com/bcn07/CUE.git
+cd CUE
+cp .env.example .env                # add DEEPGRAM_API_KEY; LIVEKIT_URL/KEY/SECRET for phones
+./run_server.sh                     # creates .venv, installs deps, downloads the face models,
+                                    # starts Ollama and pulls qwen2.5:3b, serves on :8000
 ```
 
-First run creates `.venv`, installs deps, downloads the two face models (~39 MB). It prints:
+Then:
 
-```
-  CUE director  : http://localhost:8000/
-  Setup page    : http://localhost:8000/setup
-  Camera laptops: ./camera/run_camera.sh --server ws://<your-lan-ip>:8000 --cam B
-```
+1. Open `http://localhost:8000/setup`. Add people (name, aliases the host might
+   say, 2–5 clear photos), tick the host, and give each camera a role: `wide`,
+   `host`, `guest`, `audience` or `demo`.
+2. Connect cameras. A laptop on the same network runs the line `/setup` shows,
+   e.g. `./camera/run_camera.sh --server ws://<director-ip>:8000 --cam B --code <join-code>`.
+   A phone needs HTTPS: run a tunnel to port 8000 (cloudflared or ngrok), paste
+   its address on `/setup`, and open the per-camera link in Safari. Through the
+   tunnel only the camera page, its socket and the join-code-gated LiveKit token
+   route are reachable.
+3. Direct from `http://localhost:8000/desk` (operator desk) or
+   `http://localhost:8000/` (director view with the reasoning panels). AUTO
+   cuts, ASSIST suggests, HOLD blocks automatic cuts; REC records to
+   `data/recordings/`.
 
-macOS asks for **Microphone** permission for your terminal the first time the mic starts
-(Deepgram or REC), and **Camera** permission if you stream from the Mac itself. If the port is
-already taken the launcher says which process owns it and stops instead of silently serving stale code.
-
-Check the keys in 10 seconds (never prints them): `.venv/bin/python tools/smoke_keys.py`
-
-## 2. Setup page (before the show): scripts, faces, cameras
-
-Open `http://localhost:8000/setup`.
-
-1. **People**: name, aliases the host might say ("Sarah", "Ms Tan"), role, tick *HOST* for the
-   person on the mic, upload 2–5 clear photos each. The page reports how many photos produced a
-   usable face. A person with 0 faces can only be found through the fixed camera mapping.
-2. **Event script**: paste the run of show (or upload .md/.txt). The interpreter reads it as
-   context (segment order, who speaks when); the live words always win.
-3. **Cameras**: for each camera id set a label and a role: `wide` (the safe shot), `host`
-   (where the host sits), `guest`. Optionally a *fixed person* used only when the live face match
-   cannot confirm that person. Labels saved here win over what a laptop announces.
-
-Everything is saved under `data/` and survives restarts.
-
-## 3. Camera laptops: one command each
-
-Copy the exact line shown on the setup page. Generic form (replace the IP with the MacBook's):
-
-macOS / Linux
-```bash
-# copy the cue_oneshot/camera directory to the laptop (AirDrop / USB / git), then:
-./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam A --code 482913
-./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam B --code 482913
-./camera/run_camera.sh --server ws://10.189.100.223:8000 --cam C --code 482913
-```
-
-Windows
-```bat
-camera\run_camera.bat --server ws://10.189.100.223:8000 --cam C --code 482913
-```
-
-The join code is printed on the setup page next to these commands.
-
-Only the `camera/` directory is needed on a laptop (`stream_camera.py`, `requirements-camera.txt`,
-`run_camera.sh` / `run_camera.bat`). First run creates a venv and installs `opencv-python` and
-`websockets`; an interrupted install is retried next time. Useful flags: `--list-devices`,
-`--device 1` (external webcam), `--width 854 --height 480`, `--fps 20`, `--quality 80`, `--preview`.
-Frames are letterboxed, never stretched. Defaults are 640x360 @ 15 fps ≈ 2.5 Mbit/s per camera
-(measured 2.4 Mbit/s from a 1080p FaceTime camera), which survives hackathon Wi-Fi. A stalled link is
-detected within 5 s and the script reconnects. The camera id (`--cam`) is created on the director
-automatically; set its role on the setup page. One id per laptop: a second connection with the same
-id replaces the first (the older stream is closed, never interleaved).
-
-No Python on a laptop? Open `http://<mac-ip>:8000/cam?cam=B` in Chrome. Chrome blocks webcams on plain
-http for non-localhost pages, so once per laptop enable
-`chrome://flags/#unsafely-treat-insecure-origin-as-secure` for `http://<mac-ip>:8000` (the page explains
-this). Keep that tab visible: Chrome throttles hidden tabs.
-
-## 3b. iPhones as cameras (HTTPS tunnel, join code, virtual pan/zoom)
-
-Phones need HTTPS for the camera, so the director gets a public HTTPS address through a free
-Cloudflare quick tunnel (no account). On the Mac:
+Without cameras, a mic or keys:
 
 ```bash
-brew install cloudflared
-cloudflared tunnel --url http://localhost:8000      # prints https://<words>.trycloudflare.com; keep it running
-```
-
-Paste that address into the box at the top of `/setup`; it prints one link per camera, e.g.
-`https://<words>.trycloudflare.com/cam?cam=B&code=482913`. Open the link in Safari on the phone, tap
-Start, allow the camera. Rear camera by default, a lens picker (wide / ultra wide / telephoto where
-iOS exposes them), 1080p capture, screen kept awake, LIVE / STANDBY / OFFLINE shown on the phone,
-automatic reconnect. Phones can be on mobile data; the tunnel also sidesteps venue Wi-Fi that blocks
-device-to-device traffic (laptops can use the same link in Chrome).
-
-Security, on by default:
-
-- **Join code**: `/ingest` requires `code=<6 digits>`; the code is shown on `/setup`, is per event
-  and can be rotated there (laptop command: `--code 482913`). A wrong code is refused and logged.
-- **Tunnel-only surface**: for a `*.trycloudflare.com` hostname (or `CUE_PUBLIC_URL`), only `/cam`
-  and the camera socket exist; the director, the setup page, every API and the director socket
-  return 404 through the tunnel. They stay on the LAN.
-- **One publisher per camera id**: a second device with the right code waits in STANDBY and only
-  replaces the live one after you press REPLACE on that camera's tile (or when the live one drops).
-- Video only from phones; the master microphone stays the Mac's. Close the tunnel after the show.
-
-Virtual PTZ: the phone captures full resolution and sends a cropped window (default 960x540). On the
-director's multiview, drag a tile to pan, scroll to zoom (1x to 3x, clamped inside the frame), `⟲`
-resets, `1 2 3` recall presets (`save` then a number stores the current framing). The phone eases to
-the new framing over 400 ms. Camera moves are per camera and survive reconnects.
-
-Phone setup: plugged in, Low Power Mode off, Auto-Lock Never, Do Not Disturb on, Guided Access to
-pin Safari, landscape on a stand, Safari in the foreground (iOS pauses the camera in the background;
-the page shows OFFLINE and reconnects when it returns).
-
-## 4. Show time: `http://localhost:8000/`
-
-- **Program** (big): the camera that is live, with the reason for the last decision.
-- **Multiview**: every camera with health, fps, and the faces it recognises (green boxes + name +
-  similarity). Click a camera to take it manually.
-- **Transcript**: interim text in grey, finished clauses in white. Typed test lines are labelled.
-- **Meaning**: subject, intent, timing, action, the exact words that decided it, source (`rules-fast`,
-  `llm`, `rules`), interpreter latency.
-- **Decision**: TAKE / STAY / SLATE, camera, evidence (`identity`, `static`, `wide`, `host-role`,
-  `manual`) and a human-readable reason.
-- **Latency**: interpret ms, LLM ms, clause→cut ms, speech→cut ms (estimated from Deepgram audio
-  time), identity ms, decide ms, with p50/p95.
-- **Controls**: AUTO / HOLD, WIDE, HOST, TAKE per camera, **REC**. Keyboard: `H` toggles hold, `W`
-  wide, `A`/`B`/`C` take that camera (plain key presses only; Cmd/Ctrl combos are ignored).
-- **REC** records `data/recordings/<timestamp>/`: `video.mp4` (H.264 in a fragmented MP4 written
-  live through ffmpeg, so it stays playable even if the server dies mid-show), `audio.wav` (master
-  mic, continuous, never touched by a video cut, padded with leading silence if the mic opens late),
-  `program.mp4` (video + audio muxed at stop; the intermediates are kept next to it), `cuts.jsonl`
-  (every program change and slate with offset, camera, evidence, reason, cue, latency),
-  `transcript.jsonl`, `summary.json`. Without ffmpeg the video is written by OpenCV and finalised only
-  on stop. `CUE_AUTO_RECORD=1` starts recording at boot. Recordings are listed on the setup page and
-  served under `/recordings/`; the REC pill warns when the mic has been silent.
-
-## The context-aware director (spec: `docs/CUE_CONTEXT_AWARE_DIRECTOR_SPEC.md`)
-
-Names are evidence, not commands. Since 2026-09-20 the one-shot keeps one evolving world state
-and a director loop scores every candidate shot from it, roughly 3 times a second, with reason
-codes you can read on the "Director reasoning" panel.
-
-- **World state** (`server/worldstate.py`): per camera, who is visible (tracks with identity when
-  confident), visual speech activity from mouth motion, head yaw, motion, frozen frames, sharpness,
-  shot type (close-up / medium / wide / group / empty / unusable), entrances and exits; the
-  conversation (current speaker, dialogue act, who is addressed even without a name, expected next
-  speaker, back-channel, salience, the visual subject: person / audience / screen / object,
-  transitions, overlap); master-audio activity; shot history and cut rate; mode and hold.
-- **Fast visual loop** (`server/observers.py`): computed inside the identity worker on the frames it
-  already decodes, ~7 Hz per camera, no extra model.
-- **Language loop** (`server/dialogue.py`): every finished clause is classified deterministically in
-  microseconds (back-channel, audience / screen / object subjects, questions and their addressee,
-  transitions, emotional salience) and refined by the local LLM when one is configured. The existing
-  who/intent/timing cue is one of its inputs; a person merely talked about becomes a *reference*,
-  never a visual owner.
-- **Planner** (`server/planner.py`): scores cue target visibility, addressee and expected speaker,
-  active speaker (audio fused with mouth motion), reaction windows, demonstrations, entrances,
-  transitions, overlap coverage, sharpness and composition, variety, continuity, sentence
-  continuation and emotional moments; subtracts staleness, rapid cuts and frozen frames. It returns
-  HOLD_CURRENT, CUT_TO_CAMERA, SUGGEST_CAMERA, USE_SAFETY_SHOT or WAIT_FOR_MORE_EVIDENCE with
-  alternatives and a state version; a cut only executes when the benefit beats the continuity cost,
-  the minimum shot has elapsed (1.5 s for reactions, 2.5 s otherwise), fewer than 3 cuts happened in
-  10 s, the candidate's observation is fresh, and the world has not moved since scoring.
-- **Modes**: AUTO executes; **ASSIST** turns every cut (explicit cue or planner) into a suggestion
-  card with reason codes that the operator takes with one click or Enter; HOLD blocks everything
-  but safety failover.
-- **Camera roles** now include `audience` and `demo`, so "a round of applause for everyone here"
-  goes to the audience camera (or the wide) and "here's how the prototype works" goes to the demo
-  camera (or the wide), not to whoever is talking.
-
-Spec scenarios covered by tests (`tests/test_planner.py`, `tests/test_dialogue.py`,
-`tests/test_observers.py`): name mentioned but speaker stays; directed question without a name;
-back-channel never cuts; emotional answer survives "mm-hmm"; overlap goes wide; camera failure to
-safety shot; operator hold and manual mode; ASSIST suggests; minimum shot and rapid-cut guards;
-applause to audience camera; demonstration to demo/wide; unknown identity falls back to wide;
-stale state version visible to the executor; reaction window is short. Verified live with fake
-cameras: an applause line cut to the wide on `SUBJECT_AUDIENCE`; in ASSIST an introduction became
-a suggestion that the accept action executed.
-
-Not built yet (spec phases C and D): the VLM semantic loop (a local `qwen2.5vl:3b` is downloaded
-for it; on this Mac it answers in several seconds, so it would run only on change events), gesture
-recognition, provisional shot plans, and calibration of the scores against operator corrections.
-Run in ASSIST until the AUTO gates in spec §10 have been exercised on the real setup.
-
-## "Let's look at the flowers": scene tags per camera
-
-Off by default (`CUE_SCENE=1` turns it on): it keeps a second 3B model resident, and on a
-16 GB Mac Ollama died once with three models loaded, taking the cue interpreter down with
-it. A local vision model (`CUE_SCENE_MODEL`, default `qwen2.5vl:3b` on the same Ollama as the
-interpreter) describes what each camera sees as short nouns, in the background: one camera
-every `CUE_SCENE_INTERVAL_S` (20 s), the one whose tags are oldest, never while a cue is
-pending, because the two models share the GPU. The tags show on `/setup` next to each
-camera ("sees laptop, books, flowers") and in the desk's tile notes. When the host says
-"let's look at the flowers", "eyes on the whiteboard" or "let's look at the audience",
-`server/dialogue.py` extracts the phrase (never a person's name or a pronoun) and
-`server/scene.py` matches it against the tags in plain code: exact nouns and known
-synonyms (TV = television = screen; audience = crowd, or three or more people). One camera
-must win outright; if two cameras show the thing the planner takes the wide shot, and
-tags older than `CUE_SCENE_MAX_AGE_S` (10 min) say nothing. A camera the operator marked
-`audience` or `demo` outranks the tags for those subjects; for a plain object the tags
-outrank a demo camera. A cut never waits for the vision model. Measured on this Mac with
-the real room: the host camera came back as "laptop, books, remote control, candle,
-flowers"; 12 s per frame warm, 30 s under GPU contention. Tests: `tests/test_scene.py`
-and the `look at` cases in `tests/test_dialogue.py` and `tests/test_planner.py`.
-
-## How a cut happens (and why it often does not)
-
-1. Deepgram finalises a clause (~300 ms after the host pauses). Every finished clause is acted on;
-   clauses of one utterance share an id so a correction ("Sarah, actually Daniel") gets **one** fast re-cut.
-2. Meaning: a deterministic rule pass answers in ~0.1 ms when the pattern is unambiguous. A cut needs
-   the name to be the *object* of a stage verb ("please welcome our next guest, Sarah") or a direct
-   address with a handoff tail ("Daniel, what do you think?"). It fires the cut immediately
-   (`rules-fast`); the LLM (`gpt-4.1-mini` structured output, ~0.5–1 s, run off the transcription path)
-   follows and can correct it. Future / past / negated / hypothetical / retractions ("stay where you
-   are") / questions about a person / injected instructions never produce NOW, so they never cut.
-   On the team's corpora the rules never cut wrongly (adversarial: 0 wrong cuts, 40/46 exact, 10/14
-   introductions caught; held-out: 0 wrong cuts, 30/40 exact, 7/14 caught). Recall is the LLM's job.
-   The held-out set was read for scoring only; one wrong cut it exposed ("Over to X, actually let's
-   start with Y") was fixed as a general rule (a correction marker ends a name chain), not by adding
-   the sentence.
-3. Identity: each camera's latest frame is checked ~7×/s locally (YuNet + SFace, cosine ≥ 0.363 and
-   a 0.06 margin over the runner-up, 2 consistent hits). An unknown or ambiguous face stays unknown.
-   Optional VLM fallback (`CUE_VLM=1`, needs the OpenAI key) asks the vision model only when the
-   local match cannot confirm anyone, at most every 4 s per camera, never on the cut path.
-4. Director (pure code, `server/director.py`): a named SHOW needs a healthy camera with a *fresh*
-   confirmed identity of that person (≤ 4 s), preferring the camera already live; else the fixed
-   mapping, unless that camera currently shows somebody else; else WIDE; else SLATE. Minimum shot
-   2.5 s, bypassed once per utterance for a real correction (a different person) and for failover
-   when the live camera dies. A cue older than 3 s is dropped. A cue that could not be executed yet
-   stays pending for its lifetime, is re-evaluated when identity changes or the shot may end, and is
-   dropped when the host retracts, defers, or starts a new utterance, or when the LLM disagrees with
-   the fast path.
-5. Manual HOLD beats everything automatic; failover to a healthy camera still works.
-
-Tunables live in `.env` (`CUE_MIN_SHOT_S`, `CUE_IDENTITY_MAX_AGE_S`, `CUE_CUE_LIFETIME_S`,
-`CUE_LLM_MODEL`, `CUE_VLM`, `CUE_FAST_PATH`, `CUE_MIC_DEVICE`, `CUE_RECORD_*`, ...).
-
-## Open-source LLM instead of OpenAI (what this build uses by default)
-
-No OpenAI key is needed. `.env` points the interpreter at a local Ollama server
-(`CUE_LLM_BASE_URL=http://127.0.0.1:11434/v1`, `CUE_LLM_MODEL=qwen2.5:3b`); `./run_server.sh` starts
-Ollama and pulls the model if needed (`brew install ollama` once). The same OpenAI SDK talks to it
-through the chat-completions API with a JSON schema; the model is warmed at boot and kept resident.
-On top of the model output a deterministic guard applies: a deferral / negation / past / question /
-retraction / injection found by the rule engine turns NOW into HOLD; a target the clause never
-names (by alias or role phrase) is dropped; HOST needs a real return-to-host phrase; a correction
-the model read as a group is resolved by the rules. Measured with `tools/eval_llm.py` on the team's
-corpora (the held-out set was run once, for the release number; guard rules were designed on the
-dev set and on general small-model failure modes):
-
-| model (M2 Pro, 16 GB) | dev set (58 scorable) | held-out (40) | wrong cuts dev / held-out | latency p50 / p95 |
-|---|---|---|---|---|
-| qwen2.5:3b (default) | 93% | 95% | 2 / 0 | 1.0 s / 1.1 s |
-| llama3.2:3b | 97% | 92% | 1 / 1 | 1.0 s / 1.3 s |
-| qwen2.5:7b | 97% | 95% | 1 / 0 | 2.3 s / 2.7 s (too slow for a 3 s cue lifetime on this Mac) |
-| rules alone (fast path) | 40/46 exact, 0 wrong cuts | 30/40 exact, 0 wrong cuts | 0 / 0 | 0.1 ms |
-
-The M1 gate ("90%+ on adversarial with p95 latency measured") passes for both models. The 4
-dev cases the corpus marks DUPLICATE_NAME need a two-Sarah roster and are excluded. Live check on
-this Mac with fake cameras: "Big hand for Barack Obama, everybody!" (a phrase the rules do not
-know) cut to Barack's camera through the model; a past mention held; "Thank you Barack" returned to
-the host. To use OpenAI instead, remove the two `CUE_LLM_*` lines from `.env` and set
-`OPENAI_API_KEY`; the vision fallback (VLM) only runs with OpenAI.
-
-## Driving the team's GUI (bridge to the team control plane)
-
-The one-shot can be the brain behind the team's React GUI instead of its own program view. Every
-program change the director makes is mirrored to the team backend (`apps/api` in the CUE repo) as a
-producer take on `POST /api/v1/events/{event}/take`; one-shot HOLD/AUTO become team `MANUAL_HOLD` /
-`ASSIST`. The team GUI receives the `render.command` on its control websocket and cuts its LiveKit
-video. Nothing in the team repo changes; the bridge only speaks the team's public API.
-
-```bash
-# terminal 1: team API (its own venv), default port 8000
-cd ~/Developer/hackmit_2026_cue/apps/api && .venv/bin/uvicorn cue_api.main:app --host 0.0.0.0 --port 8000
-# terminal 2: team web GUI
-cd ~/Developer/hackmit_2026_cue && npm run dev:web            # http://localhost:5173, pair the laptops as usual
-# terminal 3: the one-shot brain on another port, pointed at the team event
-cd ~/Developer/cue_oneshot
-CUE_PORT=8001 CUE_TEAM_API=http://127.0.0.1:8000 CUE_TEAM_EVENT_ID=<the event id the GUI uses> ./run_server.sh
-```
-
-`CUE_TEAM_PRODUCER_SECRET` defaults to `CUE_PRODUCER_SECRET` from the team repo's `.env`;
-`CUE_TEAM_CAMERA_MAP=A=CAM-WIDE,B=CAM-GUEST,C=CAM-HOST` maps one-shot camera ids to the team's. The
-stream epoch for a take comes from the team's camera bindings, so the compositor accepts it.
-
-How the team compositor treats these takes (its `controlAdapter.ts` classifies by reason code; ours
-are `CUE_<evidence>`, POLICY origin, never `MANUAL`):
-
-- **ASSIST** (default, `CUE_TEAM_RESUME_MODE=ASSIST`): the one-shot's decisions appear in the team
-  GUI as suggestions and the operator presses TAKE. Safe: nothing cuts on air without a human.
-- **AUTO** (`CUE_TEAM_RESUME_MODE=AUTO`): the decisions cut on air, subject to the compositor's 2.5 s
-  minimum shot. In AUTO the team's own CLane policy can also cut, so the two brains would fight unless
-  C's lane is off. The team's plan also has a one-production-pipeline rule: running the one-shot's
-  Deepgram + LLM next to C's lane is a second pipeline. Both are team decisions, not defaults.
-
-One-shot HOLD maps to the team's `MANUAL_HOLD`; one-shot AUTO maps to the resume mode above. The
-director view shows a "Team GUI" pill with the team mode, live camera and takes sent. Face identity
-on the one-shot side needs the laptops to also run `camera/stream_camera.py` (LiveKit frames are not
-visible to it); without that, use the fixed person-to-camera mapping on the setup page, the same
-role-based fallback the team's demo uses.
-
-Verified on this Mac against the real team API (`codex/stage-5-integration`): a one-shot take
-became a `render.command` for `CAM-GUEST` on the GUI's control socket in 5 ms, HOLD and AUTO mapped
-to `MANUAL_HOLD` and `ASSIST`, and a competing producer's stale revision (HTTP 409) was retried
-correctly. Not verified: a browser showing the team GUI cutting LiveKit video from real laptops.
-
-## Test it without laptops, mic or keys
-
-```bash
-.venv/bin/python -m pytest -q                       # 145 tests: assembler, rules, director, planner, dialogue, observers, pending cues, identity, recorder, speech, team bridge, end-to-end
-./run_server.sh                                     # terminal 1
+.venv/bin/python -m pytest -q                                                    # 201 tests
+./run_server.sh                                                                  # terminal 1
 .venv/bin/python tools/fake_camera.py --cam A --pattern                          # terminal 2
 .venv/bin/python tools/fake_camera.py --cam B --image tests/fixtures/obama2.jpg  # terminal 3
-.venv/bin/python tools/say.py "Please welcome Barack Obama!"                     # after enrolling Barack on /setup
-CUE_PORT=8001 CUE_DATA_DIR=/tmp/cue-soak ./run_server.sh                         # a scratch director for the soak (terminal 4)
-.venv/bin/python tools/soak.py --server http://127.0.0.1:8001 --minutes 3 --setup  # soak + failover test; --setup enrols two test people and rewrites cameras, so never point it at your real show
+# on /setup, enrol "Barack Obama" with tests/fixtures/obama.jpg, then:
+.venv/bin/python tools/say.py "Please welcome Barack Obama!"
 ```
 
-The end-to-end test starts the real server, streams real photos as cameras, enrols people through
-the upload API and drives the pipeline with typed clauses. It checks: identity lands on the right
-camera, SHOW cuts to it, a cue inside the minimum shot is held then executed, FUTURE/questions never
-cut, a mid-utterance correction re-cuts once, HOLD blocks, operator labels survive reconnects, a stale
-connection closing does not kill a reconnected camera, recording produces playable files and a cut
-log, person ids cannot escape `data/people`, and a dead live camera fails over to wide.
+The [operator guide](docs/OPERATOR_GUIDE.md) covers everything else: every
+setup step, iPhone setup, virtual pan and zoom, the desk, guest sign-up,
+recording, the bridge to the team's GUI, all tunables, and the full evidence
+log. [`docs/CUE_CONTEXT_AWARE_DIRECTOR_SPEC.md`](docs/CUE_CONTEXT_AWARE_DIRECTOR_SPEC.md)
+is the design spec for the planner.
 
-`tools/soak.py` runs three fake cameras, one browser-like client and a 12-line host script in a loop,
-kills the live guest camera once and brings it back, samples the server's memory, and writes a report.
+## Limitations
 
-## Evidence so far (this MacBook, no keys)
+- **Built in a weekend, tested on one machine.** All numbers come from one
+  MacBook and short sessions. The eval sets are small (40 held-out and 58 dev
+  lines), English only, and written by the team.
+- **The live latency figures are single sessions** with text-to-speech audio
+  (played into the Mac's microphone for nova-3, streamed straight to the API for
+  Flux), not a real host in a noisy hall. The soak used synthetic cameras and
+  typed lines.
+- **The local LLM is the bottleneck under load.** At the venue, with Ollama
+  restarted and a vision model loaded alongside, LLM calls averaged about 5 s
+  and timed out during one 43-minute session; the rule fast path kept cutting
+  ([venue notes](docs/venue_notes_2026-09-20.md)). The optional scene tagger is
+  off by default for this reason.
+- **Faces must be reasonably large.** Identity ignores faces narrower than 4%
+  of the frame (28 px minimum), so phones need to be within about two metres of
+  the people they cover. An unconfirmed face means a wide shot, not a guess.
+- **AUTO is not formally validated.** The AUTO gates in the spec (§10) were
+  not exercised on a real setup; the operator guide recommends ASSIST until
+  they are.
+- **Not verified live:** the OpenAI interpreter path and the OpenAI vision
+  fallback; guest sign-up with real sign-ups (only a fake Apps Script and one
+  poll of an empty sheet); and phone video over LiveKit has no saved
+  measurements (it was verified with a synthetic publisher and headless Chrome).
+- **Trusted network only.** The director, setup page and API have no login.
+  Cameras need a join code, and a public tunnel exposes only the camera page,
+  but anyone on the LAN can reach the control surface.
+- `tools/eval_llm.py` reads the evaluation corpora from the team repo
+  (`scripts/data/` in [chocoHacks33/CUE](https://github.com/chocoHacks33/CUE)),
+  cloned next to this one as `../hackmit_2026_cue`.
 
-| what | result |
-|---|---|
-| unit + end-to-end tests | 145 passed (`.venv/bin/python -m pytest -q`): assembler, rule parser (incl. 40+ adversarial sentences from two review rounds), director, pending-cue semantics, identity, recorder (incl. mid-recording playability), Deepgram protocol against a fake server, end-to-end |
-| live feed | this Mac's FaceTime camera via `camera/stream_camera.py`: 153 frames in 10 s at 15.0 fps, 2.4 Mbit/s, face detected, auto-took wide, SLATE on disconnect |
-| face identity | same person 0.74 cosine, different people 0.10–0.23; YuNet 640x360 ≈ 5 ms; decode+detect+embed ≈ 12 ms/frame avg |
-| 3-min soak (typed lines, rules only, recording on) | `reports/soak_2026-09-19_3min.md`, final build: 30/30 lines correct, 0 wrong cuts, 20/20 expected cuts reached, clause→program 1.2 ms p50 / 1.8 ms p95, identity 11.8 ms avg over 3545 frames, both people confirmed 0.21 s after the cameras appeared, failover after the live camera died 0.32 s, camera back + identity re-confirmed 0.32 s, cameras in 15/15/15 fps, UI relay out 15/15/15 fps, RSS 292 → 140 MB |
-| recording during that soak | 185 s `program.mp4` (H.264 fragmented + AAC, playable in Chrome and while still being written), 2762 frames, 19 cuts in `cuts.jsonl` (`reports/soak_2026-09-19_cuts.jsonl`), 184 s of continuous audio aligned with 0.4 s of leading silence for the mic start, every transcript line labelled `typed` |
-| live speech | Deepgram nova-3 from the MacBook mic: exact transcript of a spoken introduction, cut 1.17 s after end of speech, LLM confirmation 1.06 s later; room chatter -> HOLD only |
-| review | two rounds of read-only review by independent reviewers (11 reviewer passes, 37 agents in round two with adversarial verification of each finding). Round one: path traversal, stale-connection ownership, label clobbering, hotkey modifiers, wrong-cut rule patterns, pending-cue retraction, Deepgram keepalive, LLM blocking the transcript loop. Round two: an older pending cue firing after a newer satisfied cue, the live wide camera absorbing every SHOW as "already live", thank-you anywhere overriding an introduction, corrections retargeting on grammar-free markers, deferrals like "after Daniel", a stalled browser freezing everyone's state, exclusive camera ownership, LLM errors mistaken for verdicts, clause ordering of late LLM verdicts, unplayable recordings after a crash, port/.env mismatch, partial model downloads. Every confirmed finding is fixed and covered by a test. |
+## Team and credits
 
-**Live speech, verified on this Mac (2026-09-19 evening, Deepgram key present)**: the Mac's
-text-to-speech spoke "Please welcome Barack Obama!" into the MacBook microphone; Deepgram (nova-3)
-transcribed it exactly, the rule fast path fired SHOW, the director cut to Barack's camera 1.17 s after
-the words ended, and the local LLM confirmed the meaning 1.06 s later. A past-tense mention held; a
-thank-you returned to the host. In a noisy room, 40 s of unrelated conversation produced only HOLDs.
-**Deepgram Flux instead of nova-3** (`CUE_DEEPGRAM_MODEL=flux-general-en`): Deepgram's
-turn-based model on the v2 endpoint. It sends the whole turn so far (shown as the interim) and
-one final at end of turn, which `server/speech.py` splits into one clause per sentence inside one
-utterance, so the correction rule still works. Flux takes new roster key terms through a
-Configure message, so a roster change no longer reconnects the socket. Measured on this Mac
-(2026-09-20, two TTS sentences streamed through the director's client to the real API, 3 s of
-silence appended): the final clause arrived 0.85 to 1.0 s after the audio ended with the default
-`CUE_FLUX_EOT_THRESHOLD=0.7` (0.46 to 0.85 s at 0.5), against 0.55 s for nova-3; both models
-transcribed "Please welcome Sarah Tan to the stage." exactly. nova-3 also produced a final in the
-middle of a sentence at a pause, which Flux does not. Trade-off, stated plainly: Flux is a little
-slower to finalise but never splits a sentence; `CUE_DEEPGRAM_MODEL=nova-3` switches back.
+CUE was built at HackMIT 2026 by:
 
-Roster names and aliases are sent to Deepgram as key terms (nova-3 `keyterm`), and the stream
-reconnects in ~0.25 s when the roster changes so the terms stay current. Set `CUE_MIC_DEVICE` to the
-index or name printed by `tools/smoke_keys.py` if the system default input is not the right mic.
+- Brian Nwaghodoh ([@bcn07](https://github.com/bcn07)), who wrote the director in this repository
+- Prakash ([@chocoHacks33](https://github.com/chocoHacks33))
+- Aditi Muduganti ([@mudadit26](https://github.com/mudadit26))
+- Hema Dassani ([@hemadassani](https://github.com/hemadassani))
 
-**Not verified live**: the OpenAI path (no key; the local model is used instead) and the VLM fallback
-(OpenAI only). Both fail safe: a failed interpretation is a HOLD.
+The team's main repository, with the React production GUI and control-plane API
+that `server/bridge.py` talks to, is
+[chocoHacks33/CUE](https://github.com/chocoHacks33/CUE).
 
-## Layout
+The operator desk and guest pages come from
+[hemadassani/cue-desk-ui](https://github.com/hemadassani/cue-desk-ui):
+
+- `server/static/desk.html`: the desk UI by **Hema Dassani**, adapted here to
+  receive camera frames over `/ws` and to show a tile for every camera.
+- `server/static/dashboard.html`, `server/static/signup.html`,
+  `server/static/config.example.js` and `tools/serve_https.py`: by **Aditi
+  Muduganti**, in the same repository.
+
+The test photos in `tests/fixtures/` are official White House photographs by
+Pete Souza, taken from the examples of
+[ageitgey/face_recognition](https://github.com/ageitgey/face_recognition); see
+[`tests/fixtures/README.md`](tests/fixtures/README.md).
+
+## Built with
+
+- [Deepgram](https://deepgram.com): streaming speech-to-text (Flux on the v2
+  endpoint, or nova-3), with roster key terms
+- [LiveKit](https://livekit.io): WebRTC transport from the phones (LiveKit
+  Cloud, `livekit` and `livekit-api` for Python, `livekit-client` in the browser)
+- [Ollama](https://ollama.com) with [Qwen2.5 3B](https://ollama.com/library/qwen2.5):
+  the local interpreter, through the OpenAI-compatible API with a JSON schema
+- OpenCV [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
+  and [SFace](https://github.com/opencv/opencv_zoo/tree/main/models/face_recognition_sface):
+  face detection and recognition
+- [FastAPI](https://fastapi.tiangolo.com) and Uvicorn: the director server,
+  WebSockets and the operator pages
+- ffmpeg: the live fragmented-MP4 recording and the audio mux
+
+## Repository layout
 
 ```
-run_server.sh            MacBook launcher (venv, deps, models, LAN URLs)
-server/app.py            FastAPI: /ingest (cameras) /ui (browser) /api/* (setup, control, typed input, record)
-server/semantics.py      meaning: rule fast path + OpenAI structured output; validate()
-server/director.py       deterministic SHOW/WIDE/HOST/HOLD, min shot, correction, failover
-server/identity.py       YuNet + SFace enrolment, matching, per-camera presence tracker, worker thread
-server/recorder.py       program video + continuous master audio + cuts.jsonl, ffmpeg mux
-server/vlm.py            optional vision-model fallback (rate-limited)
-server/bridge.py         mirrors cuts and HOLD/AUTO to the team backend's control plane (team GUI)
-server/worldstate.py     one evolving world state (cameras, conversation, audio, shot history)
-server/observers.py      fast visual loop: tracks, mouth motion, yaw, motion, frozen frames, shot type
-server/dialogue.py       dialogue act, addressee, subject, salience per clause (rules + local LLM)
-server/planner.py        editorial scorer with reason codes; HOLD / CUT / SUGGEST / SAFETY / WAIT
-server/speech.py         mic (sounddevice) -> Deepgram WebSocket -> clause assembler
-server/assembler.py      Deepgram messages -> clauses / utterance ids (pure)
-server/static/           index.html (director), setup.html, cam.html (browser camera fallback)
-camera/                  laptop script + bootstrap wrappers + its 2-line requirements
-tools/                   fake_camera.py, say.py, soak.py, smoke_keys.py
-tests/                   145 tests incl. end-to-end; fixtures are public-domain portraits
-reports/                 soak report, cut log and recording summary from this MacBook (2026-09-19)
-data/                    roster, photos, script, camera config, recordings/, reports/ (created at runtime)
-models/                  face_detection_yunet_2023mar.onnx, face_recognition_sface_2021dec.onnx
+server/        director server: speech, interpreter, identity, world state, planner, director, recorder, LiveKit, desk adapter
+server/static/ director view, setup page, camera page, and the desk / dashboard / sign-up pages
+camera/        laptop camera script with macOS/Linux and Windows launchers
+tools/         fake cameras, typed input, soak test, key check, interpreter eval, HTTPS dev server
+tests/         unit and end-to-end tests; face fixtures
+reports/       soak report, cut log, recording summary and interpreter evals
+docs/          operator guide, director spec, venue notes, iPhone camera plan
 ```
-
-## Desk UI (hemadassani/cue-desk-ui) at `/desk`
-
-`server/desk_ws.py` serves `server/static/desk.html`, a copy of the
-[cue-desk-ui](https://github.com/hemadassani/cue-desk-ui) page, and speaks its
-WebSocket contract at `/ws`: `source`, `directing`, `caption_status`,
-`deepgram_config`, `roster`, `mode`, `caption_provisional`, `caption_final`,
-`deepgram_result`, `decision` (DecisionRecord), `camera_state`, `prepare`,
-`stand_down`; from the desk `manual_take`, `set_mode`, `accept_suggestion`,
-`skip_suggestion`, `rate`. The page's camera tiles are canvases painted from the
-same binary frames the `/ui` page gets (iPhone cameras through `/ingest`), with
-the camera id rewritten to `CAM-HOST` / `CAM-GUEST` / `CAM-WIDE` by role. Like
-`/ui`, neither `/desk` nor `/ws` exists through the public tunnel host.
-
-Open `http://127.0.0.1:8000/desk` on the director Mac. When the director's
-snapshot carries `assist` and `suggestion`, the desk's assist, accept and skip
-map to the director's `assist`, `accept` and `skip` controls and a suggestion
-shows as the desk's suggestion card; with an older director, assist falls back
-to HOLD and the desk is told. Limits, stated on purpose: no Deepgram
-first-word latency is measured, so that row stays empty; decisions are read
-from the ~4 Hz state snapshot, so two decisions inside one tick show as the
-later one.
-
-The desk's two sibling pages are served too: `/static/dashboard.html` (the
-production team's participant list with camera assignment) and
-`/static/signup.html` (a guest's name, two photos and consent). Both talk to
-the Google Apps Script web app described in the cue-desk-ui README, not to this
-server; copy `server/static/config.example.js` to `server/static/config.js`
-and paste the deployed `/exec` URL there. That file is gitignored because the
-URL is a capability: anyone holding it can write to the sheet. Guests' phones
-need HTTPS for the camera, and this server does not expose `/static` through
-the tunnel. For phones on the same Wi-Fi, `python tools/serve_https.py` (from
-upstream PR #5) serves `server/static` over HTTPS with a 14-day self-signed
-certificate that carries the Mac's LAN IP; the phone accepts the warning once.
-Certificates land in `.certs/`, gitignored. Venue Wi-Fi that isolates clients
-defeats this; then host `signup.html` elsewhere.
-
-The roster the desk shows comes from this director (the people and camera
-assignments on `/setup`), so each guest's tile shows their name once a camera
-has a fixed person.
-
-**Sign-ups enrol themselves.** With the sheet linked (the `endpoint` in
-`server/static/config.js`, or `CUE_SIGNUP_ENDPOINT` in `.env`), the server
-polls the Apps Script every `CUE_SIGNUP_POLL_S` (5 s) and turns each
-consenting row into a person here: name and role, the sheet's `guestId` as
-the id, both Drive photos into `data/people/<id>/` for face enrolment, and
-the camera the dashboard assigned as that camera's fixed person. The rules,
-in `server/signup_sync.py`: a name already enrolled on `/setup` is adopted,
-never duplicated; the host flag never comes from the sheet, and only the
-sign-up page's preset roles are taken (free text a guest typed never reaches
-the interpreter's prompt); a camera assignment is followed when the sheet
-changes it (the person it replaces is named in the event), and on first sight
-it only fills an empty slot for a person not already placed; photos that Drive
-will not hand out (not link-readable) are retried a few times and the name is
-enrolled anyway; a row that vanishes removes nobody, and someone removed on
-`/setup` is not brought back; the sync never restarts the Deepgram stream,
-so a sign-up mid-show cannot drop the host's clause (new names reach the key
-terms at the next operator-driven reconnect). `CUE_SIGNUP_ENABLED=0` switches
-the poller off. The `/setup` page shows the link's status above the people
-cards. The endpoint is a capability URL and never appears in logs, events or
-`/api/state`.
-
-The `/ui` protocol is unchanged; the adapter subscribes to the same fan-out.
-Tests: `tests/test_desk_ws.py`, `tests/test_signup_sync.py`.
-
-## LiveKit video transport
-
-Set `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET` (and optionally `LIVEKIT_ROOM`) in `.env`
-and the phone page switches from JPEG-over-WebSocket to WebRTC: the phone publishes its cropped
-960x540 canvas to the LiveKit Cloud room, the director joins the same room subscribe-only
-(`server/livekit_source.py`), decodes each track and re-encodes JPEG at `CUE_LIVEKIT_FPS` (10)
-into the unchanged Camera path (identity, observers, recorder, UI fan-out). Control back to the
-phone (PTZ, standby, ack, replaced) is a LiveKit data message on topic `cue`. One publisher per
-camera id, standby and approval work exactly as on `/ingest`; laptops on `/ingest` keep working.
-The phone page still needs HTTPS, so the cloudflared tunnel stays for `/cam` and the join-code
-gated `GET /api/livekit/token`; media itself never crosses the tunnel.
-
-Verified 2026-09-20: `tools/fake_lk_camera.py` (a synthetic publisher using the same token route)
-and the real `/cam` page in headless Chrome both reached the director through LiveKit Cloud at
-7 fps re-encoded, PTZ delivered over the data channel, second publisher STANDBY -> approve ->
-first one told `replaced`. Not yet tested on a real iPhone.
