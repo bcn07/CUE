@@ -22,9 +22,19 @@ import httpx
 import numpy as np
 
 
+def letterbox(img: np.ndarray, w: int, h: int) -> np.ndarray:
+    """Fit into w x h without stretching: a squashed face is not detected (a portrait photo in 16:9)."""
+    s = min(w / img.shape[1], h / img.shape[0])
+    r = cv2.resize(img, (max(1, int(img.shape[1] * s)), max(1, int(img.shape[0] * s))))
+    out = np.zeros((h, w, 3), np.uint8)
+    y0, x0 = (h - r.shape[0]) // 2, (w - r.shape[1]) // 2
+    out[y0:y0 + r.shape[0], x0:x0 + r.shape[1]] = r
+    return out
+
+
 def pattern(w: int, h: int, i: int, cam: str, img: np.ndarray | None) -> np.ndarray:
     if img is not None:
-        frame = cv2.resize(img, (w, h))
+        frame = img.copy()
     else:
         frame = np.zeros((h, w, 3), np.uint8)
         frame[:] = (40 + (i * 3) % 60, 60, 90)
@@ -48,7 +58,13 @@ async def main() -> int:
     from livekit import rtc
 
     w, h = (int(x) for x in a.size.lower().split("x"))
-    img = cv2.imread(a.image) if a.image else None
+    img = None
+    if a.image:
+        img = cv2.imread(a.image)
+        if img is None:
+            print(f"cannot read {a.image}", file=sys.stderr)
+            return 1
+        img = letterbox(img, w, h)
     r = httpx.get(f"{a.server}/api/livekit/token", params={"cam": a.cam, "code": a.code, "label": a.label or f"fake {a.cam}"}, timeout=10)
     if r.status_code != 200:
         print(f"token refused: HTTP {r.status_code} {r.text[:200]}", file=sys.stderr)
