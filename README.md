@@ -183,7 +183,7 @@ is the design spec for the planner.
 CUE was built at HackMIT 2026 by:
 
 - Brian Nwaghodoh ([@bcn07](https://github.com/bcn07)), who wrote the director in this repository
-- Prakash ([@chocoHacks33](https://github.com/chocoHacks33))
+- Prakash Kumar ([@chocoHacks33](https://github.com/chocoHacks33))
 - Aditi Muduganti ([@mudadit26](https://github.com/mudadit26))
 - Hema Dassani ([@hemadassani](https://github.com/hemadassani))
 
@@ -219,6 +219,8 @@ Pete Souza, taken from the examples of
 - [FastAPI](https://fastapi.tiangolo.com) and Uvicorn: the director server,
   WebSockets and the operator pages
 - ffmpeg: the live fragmented-MP4 recording and the audio mux
+- AI coding agents (OpenAI Codex and Claude Code): much of the code was written with them, working from
+  the specification and prompts in [`docs/`](docs/)
 
 ## Repository layout
 
@@ -231,3 +233,8 @@ tests/         unit and end-to-end tests; face fixtures
 reports/       soak report, cut log, recording summary and interpreter evals
 docs/          operator guide, director spec, venue notes, iPhone camera plan
 ```
+
+## License
+
+MIT; see [`LICENSE`](LICENSE). Hema Dassani's and Aditi Muduganti's pages are included with
+their permission.
