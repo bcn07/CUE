@@ -1,4 +1,4 @@
-"""LiveKit video transport for the one-shot director.
+"""LiveKit video transport for the CUE director.
 
 Phones publish WebRTC video to a LiveKit Cloud room. The director joins the same room as a
 subscribe-only participant, decodes every remote video track and re-encodes it as JPEG at a

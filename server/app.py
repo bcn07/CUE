@@ -1,4 +1,4 @@
-"""CUE one-shot director server.
+"""CUE director server.
 
 Phones/laptops push JPEG frames over WebSocket (/ingest). The MacBook mic is
 transcribed by Deepgram (speech.py). Each finished clause becomes a meaning
@@ -1112,7 +1112,7 @@ class Show:
 # --------------------------------------------------------------------- app
 settings = load_settings()
 show = Show(settings)
-app = FastAPI(title="CUE one-shot director")
+app = FastAPI(title="CUE director")
 app.mount("/static", StaticFiles(directory=str(settings.static_dir)), name="static")
 app.mount("/people-photos", StaticFiles(directory=str(settings.data_dir / "people")), name="people")
 app.mount("/recordings", StaticFiles(directory=str(settings.data_dir / "recordings")), name="recordings")

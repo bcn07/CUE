@@ -1,5 +1,5 @@
-"""Settings for the standalone CUE one-shot. Everything comes from the
-environment (loaded from cue_oneshot/.env, then the CUE repo's .env as a
+"""Settings for the CUE director. Everything comes from the
+environment (loaded from this repo's .env, then the team repo's .env as a
 fallback for the two provider keys). Keys are never printed."""
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ def _load_env() -> None:
     load_dotenv(ROOT / ".env")
     for k in ("OPENAI_API_KEY", "DEEPGRAM_API_KEY", "LIVEKIT_API_SECRET"):
         if os.environ.get(k, "").strip():
-            KEY_SOURCES[k] = "environment or cue_oneshot/.env"
+            KEY_SOURCES[k] = "environment or .env"
     if REPO_ENV.exists():
         # Fallback: the team repo's .env fills names that are still empty. Documented in README; logged at startup.
         before = {k: os.environ.get(k, "").strip() for k in ("OPENAI_API_KEY", "DEEPGRAM_API_KEY")}
