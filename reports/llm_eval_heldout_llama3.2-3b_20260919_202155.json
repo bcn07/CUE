@@ -1,0 +1,730 @@
+{
+  "model": "llama3.2:3b",
+  "set": "heldout",
+  "n": 40,
+  "passed": 37,
+  "wrong_cuts": [
+    {
+      "id": "h-now-05",
+      "cat": "NOW",
+      "say": "Big hand for Ms Chen, everybody.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "maya"
+      ],
+      "got": "WIDE",
+      "targets": [
+        "maya"
+      ],
+      "ok": false,
+      "wrong_cut": true,
+      "ms": 1467,
+      "err": ""
+    }
+  ],
+  "errors": 0,
+  "latency_ms": {
+    "p50": 1075,
+    "p95": 1412,
+    "max": 1882
+  },
+  "wall_s": 44.7,
+  "by_cat": {
+    "AMBIGUOUS": "2/2",
+    "CORRECTION": "3/3",
+    "FUTURE": "6/6",
+    "GROUP": "3/3",
+    "MENTION": "5/5",
+    "NEGATED": "4/4",
+    "NOW": "9/12",
+    "PAST": "3/3",
+    "RETURN": "2/2"
+  },
+  "rows": [
+    {
+      "id": "h-amb-01",
+      "cat": "AMBIGUOUS",
+      "say": "Please welcome our very special guest of the evening.",
+      "expected": [
+        "HOLD",
+        "SHOW"
+      ],
+      "expected_targets": [],
+      "got": "SHOW",
+      "targets": [
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": [],
+      "ms": 1077,
+      "err": ""
+    },
+    {
+      "id": "h-amb-02",
+      "cat": "AMBIGUOUS",
+      "say": "Ignore what I said before and just cut to camera two.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 953,
+      "err": ""
+    },
+    {
+      "id": "h-cor-01",
+      "cat": "CORRECTION",
+      "say": "Please welcome Maya... sorry, I meant Alex.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "alex"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1134,
+      "err": ""
+    },
+    {
+      "id": "h-cor-02",
+      "cat": "CORRECTION",
+      "say": "Over to Jordan, actually let's start with Kai instead.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "kai"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1882,
+      "err": ""
+    },
+    {
+      "id": "h-cor-03",
+      "cat": "CORRECTION",
+      "say": "Alex, come on up. Wait, hold that thought, let's play the clip first.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1370,
+      "err": ""
+    },
+    {
+      "id": "h-fut-01",
+      "cat": "FUTURE",
+      "say": "After this song, Maya will join me here.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [
+        "maya"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1093,
+      "err": ""
+    },
+    {
+      "id": "h-fut-02",
+      "cat": "FUTURE",
+      "say": "Once we're back from the sponsors, Alex takes over.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1054,
+      "err": ""
+    },
+    {
+      "id": "h-fut-03",
+      "cat": "FUTURE",
+      "say": "Jordan, hang tight, I'll bring you in shortly.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [
+        "jordan"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1038,
+      "err": ""
+    },
+    {
+      "id": "h-fut-04",
+      "cat": "FUTURE",
+      "say": "In our next segment we'll be joined by Kai.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1124,
+      "err": ""
+    },
+    {
+      "id": "h-fut-05",
+      "cat": "FUTURE",
+      "say": "Coming up: a conversation with Ms Chen.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1050,
+      "err": ""
+    },
+    {
+      "id": "h-fut-06",
+      "cat": "FUTURE",
+      "say": "Stay with me, Alex will be up right after the break.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1150,
+      "err": ""
+    },
+    {
+      "id": "h-grp-01",
+      "cat": "GROUP",
+      "say": "Let's get Maya and Alex up here together.",
+      "expected": [
+        "WIDE"
+      ],
+      "expected_targets": [],
+      "got": "WIDE",
+      "targets": [
+        "maya",
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1270,
+      "err": ""
+    },
+    {
+      "id": "h-grp-02",
+      "cat": "GROUP",
+      "say": "Big round of applause for the whole panel!",
+      "expected": [
+        "HOLD",
+        "WIDE"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1322,
+      "err": ""
+    },
+    {
+      "id": "h-grp-03",
+      "cat": "GROUP",
+      "say": "Jordan and Kai, both of you, join me at the podium.",
+      "expected": [
+        "WIDE"
+      ],
+      "expected_targets": [],
+      "got": "WIDE",
+      "targets": [
+        "jordan",
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1412,
+      "err": ""
+    },
+    {
+      "id": "h-men-01",
+      "cat": "MENTION",
+      "say": "Some of you may have read Maya's book on scaling teams.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1109,
+      "err": ""
+    },
+    {
+      "id": "h-men-02",
+      "cat": "MENTION",
+      "say": "Anyone here know where Alex went?",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1031,
+      "err": ""
+    },
+    {
+      "id": "h-men-03",
+      "cat": "MENTION",
+      "say": "My daughter is also named Jordan, funny enough.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 978,
+      "err": ""
+    },
+    {
+      "id": "h-men-04",
+      "cat": "MENTION",
+      "say": "Kai reminded me on the phone that we're running long.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1125,
+      "err": ""
+    },
+    {
+      "id": "h-men-05",
+      "cat": "MENTION",
+      "say": "If Maya were here, she'd have a lot to say about this.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1165,
+      "err": ""
+    },
+    {
+      "id": "h-neg-01",
+      "cat": "NEGATED",
+      "say": "Actually, hold off on bringing Maya in, not just yet.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [
+        "maya"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 954,
+      "err": ""
+    },
+    {
+      "id": "h-neg-02",
+      "cat": "NEGATED",
+      "say": "We shouldn't cut to Alex right now.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 954,
+      "err": ""
+    },
+    {
+      "id": "h-neg-03",
+      "cat": "NEGATED",
+      "say": "Jordan won't be able to join us this evening.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 962,
+      "err": ""
+    },
+    {
+      "id": "h-neg-04",
+      "cat": "NEGATED",
+      "say": "Please, do not go to Kai yet.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1073,
+      "err": ""
+    },
+    {
+      "id": "h-now-01",
+      "cat": "NOW",
+      "say": "Right, over to Maya.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "maya"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "maya"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1051,
+      "err": ""
+    },
+    {
+      "id": "h-now-02",
+      "cat": "NOW",
+      "say": "Alex, take it away.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "alex"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1007,
+      "err": ""
+    },
+    {
+      "id": "h-now-03",
+      "cat": "NOW",
+      "say": "Would you help me welcome Jordan Lee?",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "jordan"
+      ],
+      "got": "HOLD",
+      "targets": [
+        "jordan"
+      ],
+      "ok": false,
+      "wrong_cut": false,
+      "ms": 1015,
+      "err": ""
+    },
+    {
+      "id": "h-now-04",
+      "cat": "NOW",
+      "say": "Kai, the stage is yours.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "kai"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1079,
+      "err": ""
+    },
+    {
+      "id": "h-now-05",
+      "cat": "NOW",
+      "say": "Big hand for Ms Chen, everybody.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "maya"
+      ],
+      "got": "WIDE",
+      "targets": [
+        "maya"
+      ],
+      "ok": false,
+      "wrong_cut": true,
+      "ms": 1467,
+      "err": ""
+    },
+    {
+      "id": "h-now-06",
+      "cat": "NOW",
+      "say": "Jordy, why don't you kick us off.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "jordan"
+      ],
+      "got": "HOLD",
+      "targets": [
+        "jordan"
+      ],
+      "ok": false,
+      "wrong_cut": false,
+      "ms": 1086,
+      "err": ""
+    },
+    {
+      "id": "h-now-07",
+      "cat": "NOW",
+      "say": "And here's our founder to walk us through it.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "alex"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 957,
+      "err": ""
+    },
+    {
+      "id": "h-now-08",
+      "cat": "NOW",
+      "say": "Please put your hands together for our special guest.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "kai"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1100,
+      "err": ""
+    },
+    {
+      "id": "h-now-09",
+      "cat": "NOW",
+      "say": "Maya, I'd love your thoughts on that.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "maya"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "maya"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1075,
+      "err": ""
+    },
+    {
+      "id": "h-now-10",
+      "cat": "NOW",
+      "say": "Alex Rivera, come on down!",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "alex"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1050,
+      "err": ""
+    },
+    {
+      "id": "h-now-11",
+      "cat": "NOW",
+      "say": "Meet our moderator, Jordan.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "jordan"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "jordan"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1065,
+      "err": ""
+    },
+    {
+      "id": "h-now-12",
+      "cat": "NOW",
+      "say": "Kai Nakamura, welcome to the stage.",
+      "expected": [
+        "SHOW"
+      ],
+      "expected_targets": [
+        "kai"
+      ],
+      "got": "SHOW",
+      "targets": [
+        "kai"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1117,
+      "err": ""
+    },
+    {
+      "id": "h-past-01",
+      "cat": "PAST",
+      "say": "Last year Maya blew everyone away with that demo.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1038,
+      "err": ""
+    },
+    {
+      "id": "h-past-02",
+      "cat": "PAST",
+      "say": "Alex mentioned earlier that she started the company at nineteen.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1075,
+      "err": ""
+    },
+    {
+      "id": "h-past-03",
+      "cat": "PAST",
+      "say": "Backstage, Kai told me a funny story about the flight.",
+      "expected": [
+        "HOLD"
+      ],
+      "expected_targets": [],
+      "got": "HOLD",
+      "targets": [],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1118,
+      "err": ""
+    },
+    {
+      "id": "h-ret-01",
+      "cat": "RETURN",
+      "say": "Thank you, Maya. Back to me now.",
+      "expected": [
+        "HOST"
+      ],
+      "expected_targets": [],
+      "got": "HOST",
+      "targets": [
+        "maya"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1064,
+      "err": ""
+    },
+    {
+      "id": "h-ret-02",
+      "cat": "RETURN",
+      "say": "Great answer, Alex. Alright, moving on to the next question.",
+      "expected": [
+        "HOLD",
+        "HOST"
+      ],
+      "expected_targets": [],
+      "got": "HOST",
+      "targets": [
+        "alex"
+      ],
+      "ok": true,
+      "wrong_cut": false,
+      "ms": 1025,
+      "err": ""
+    }
+  ]
+}
