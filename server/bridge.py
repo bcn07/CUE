@@ -1,13 +1,13 @@
 """Bridge to the team's control plane (apps/api in the CUE repo).
 
-The one-shot stays the brain: speech -> meaning -> deterministic director. Every program
+This director stays the brain: speech -> meaning -> deterministic director. Every program
 change it makes is mirrored to the team backend as a producer take
 (`POST /api/v1/events/{event}/take`), and HOLD / AUTO are mirrored to `/mode`. The team's
 React GUI then executes the render command on its LiveKit video. Nothing here blocks the
 director: calls are fire-and-forget tasks with a short timeout and a single retry when the
 team's mode revision moved under us.
 
-Camera ids differ: the one-shot uses A/B/C, the team uses CAM-WIDE / CAM-GUEST / CAM-HOST.
+Camera ids differ: this director uses A/B/C, the team uses CAM-WIDE / CAM-GUEST / CAM-HOST.
 `CUE_TEAM_CAMERA_MAP=A=CAM-WIDE,B=CAM-GUEST,C=CAM-HOST` maps one to the other.
 """
 from __future__ import annotations
@@ -92,8 +92,8 @@ class TeamControlBridge:
     def _revision(s: dict) -> int:
         return int(s.get("modeRevision", s.get("mode_revision", 0)) or 0)
 
-    async def mirror_take(self, oneshot_camera: str, evidence: str, reason: str) -> dict | None:
-        team_cam = self.camera_map.get(oneshot_camera.upper())
+    async def mirror_take(self, director_camera: str, evidence: str, reason: str) -> dict | None:
+        team_cam = self.camera_map.get(director_camera.upper())
         if team_cam is None:
             self.stats["skipped"] += 1
             return None
@@ -111,7 +111,7 @@ class TeamControlBridge:
                     epochs = await self.bindings()
                     epoch = epochs.get(team_cam) or s.get("liveStreamEpoch") or s.get("live_stream_epoch") or 1
                     body = {"cameraId": team_cam, "streamEpoch": int(epoch), "expectedRevision": self._revision(s),
-                            "idempotencyKey": f"oneshot-{uuid.uuid4().hex}", "reasonCode": reason_code}
+                            "idempotencyKey": f"cue-{uuid.uuid4().hex}", "reasonCode": reason_code}
                     r = await self._client.post(f"{self._ev}/take", json=body)
                     if r.status_code == 409 and attempt == 0:
                         continue  # revision moved (someone else took): re-read and retry once
@@ -132,7 +132,7 @@ class TeamControlBridge:
         return None
 
     async def mirror_mode(self, hold: bool) -> dict | None:
-        """One-shot HOLD -> team MANUAL_HOLD. One-shot AUTO -> team `resume_mode`:
+        """Director HOLD -> team MANUAL_HOLD. Director AUTO -> team `resume_mode`:
         ASSIST (default) = our decisions appear as suggestions for the operator; AUTO = they cut on air."""
         mode = "MANUAL_HOLD" if hold else self.resume_mode
         async with self._lock:
@@ -141,7 +141,7 @@ class TeamControlBridge:
                     s = await self.state()
                     if s.get("mode") == mode:
                         return s
-                    body = {"mode": mode, "expectedRevision": self._revision(s), "idempotencyKey": f"oneshot-{uuid.uuid4().hex}"}
+                    body = {"mode": mode, "expectedRevision": self._revision(s), "idempotencyKey": f"cue-{uuid.uuid4().hex}"}
                     r = await self._client.post(f"{self._ev}/mode", json=body)
                     if r.status_code == 409 and attempt == 0:
                         continue

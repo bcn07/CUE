@@ -87,7 +87,7 @@ class Settings:
     livekit_url: str = ""               # wss://<project>.livekit.cloud; when set, phones publish WebRTC there instead of JPEG over /ingest
     livekit_api_key: str = ""
     livekit_api_secret: str = ""
-    livekit_room: str = "cue-oneshot"
+    livekit_room: str = "cue"
     livekit_fps: float = 10.0           # JPEG re-encode rate per camera into the director
     livekit_jpeg_quality: int = 70
     livekit_max_width: int = 960
@@ -95,7 +95,7 @@ class Settings:
     team_event_id: str = ""
     team_producer_secret: str = ""
     team_camera_map: str = "A=CAM-WIDE,B=CAM-GUEST,C=CAM-HOST"
-    team_resume_mode: str = "ASSIST"     # ASSIST = suggestions the operator confirms; AUTO = the one-shot cuts on air
+    team_resume_mode: str = "ASSIST"     # ASSIST = suggestions the operator confirms; AUTO = CUE cuts on air
     signup_enabled: bool = True         # CUE_SIGNUP_ENABLED=0 switches the poller off whatever else is set
     signup_endpoint: str = ""           # the desk pages' Apps Script /exec URL: a capability, never logged
     signup_event_id: str = ""           # only rows written with this eventId; empty = every row
@@ -193,7 +193,7 @@ def load_settings() -> Settings:
         livekit_url=env.get("LIVEKIT_URL", "").strip().rstrip("/"),
         livekit_api_key=env.get("LIVEKIT_API_KEY", "").strip(),
         livekit_api_secret=env.get("LIVEKIT_API_SECRET", "").strip(),
-        livekit_room=env.get("LIVEKIT_ROOM", "cue-oneshot").strip() or "cue-oneshot",
+        livekit_room=env.get("LIVEKIT_ROOM", "cue").strip() or "cue",
         livekit_fps=_float("CUE_LIVEKIT_FPS", 10.0),
         livekit_jpeg_quality=int(_float("CUE_LIVEKIT_JPEG_QUALITY", 70)),
         livekit_max_width=int(_float("CUE_LIVEKIT_MAX_WIDTH", 960)),

@@ -87,15 +87,15 @@ def test_take_mode_and_conflict_recovery(team_api):
         assert (await b.check())["mode"] == "ASSIST"
         res = await b.mirror_take("B", "identity", "fresh identity")
         assert res["renderCommand"]["cameraId"] == "CAM-GUEST" and res["renderCommand"]["streamEpoch"] == 3   # epoch from bindings
-        assert st["takes"][-1]["reasonCode"] == "CUE_IDENTITY" and st["takes"][-1]["idempotencyKey"].startswith("oneshot-")
-        # unmapped one-shot camera: skipped, never sent
+        assert st["takes"][-1]["reasonCode"] == "CUE_IDENTITY" and st["takes"][-1]["idempotencyKey"].startswith("cue-")
+        # unmapped director camera: skipped, never sent
         assert await b.mirror_take("Z", "identity", "x") is None and b.stats["skipped"] == 1
         # HOLD / AUTO
         assert (await b.mirror_mode(True))["state"]["mode"] == "MANUAL_HOLD"
         assert (await b.mirror_mode(False))["state"]["mode"] == "ASSIST"
         assert (await b.mirror_mode(False))["mode"] == "ASSIST"   # already there: no write
         assert len(st["modes"]) == 2
-        # explicit AUTO resume mode when the user decides the one-shot cuts on air
+        # explicit AUTO resume mode when the user decides CUE cuts on air
         b_auto = TeamControlBridge(base, "ev", SECRET, parse_camera_map("B=CAM-GUEST"), resume_mode="auto")
         assert (await b_auto.mirror_mode(False))["state"]["mode"] == "AUTO"
         assert (await b.mirror_mode(False))["state"]["mode"] == "ASSIST"

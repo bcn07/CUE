@@ -241,7 +241,7 @@ body.manual .ctl.main .ic{background:var(--hold);color:#1c1300}
 <script>
 /* CUE desk v4. Server wiring lives in three marked places only. */
 const CAMS = { 'CAM-HOST':'Host camera', 'CAM-GUEST':'Guest camera', 'CAM-WIDE':'Wide shot' };
-/* one-shot adapter: more than three cameras. Any camera id the server names gets a tile (CAM-GUEST-2 -> "Guest 2"); a
+/* CUE adapter: more than three cameras. Any camera id the server names gets a tile (CAM-GUEST-2 -> "Guest 2"); a
    `cameras` message lists the ids that exist right now and the grid shows exactly those: no ghost tile for a camera whose
    role changed or that was removed, and Host/Guest/Wide hidden while no camera has that role. Digit keys follow the numbers shown. */
 const BUILTIN = new Set(['CAM-HOST', 'CAM-GUEST', 'CAM-WIDE']);
@@ -385,7 +385,7 @@ $('sugYes').onclick = acceptSuggestion; $('sugNo').onclick = () => skipSuggestio
 
 /* WIRING POINT 2 of 3: outgoing message names */
 function send(msg){ const ok = state.ws && state.ws.readyState === 1; if (ok) state.ws.send(JSON.stringify(msg)); return ok; }
-/* one-shot: a tile click (or 1-9) is a one-off cut and CUE keeps directing; upstream switched to take-over here. Use Take over / H for a real hold. */
+/* CUE: a tile click (or 1-9) is a one-off cut and CUE keeps directing; upstream switched to take-over here. Use Take over / H for a real hold. */
 function take(cam){ if (!CAMS[cam] || cam === state.live) return; hideSuggestion();
   if (!send({ type:'manual_take', camera:cam })) CUE.addDecision({ action:'TAKE', camera_id:cam, manual:true, accepted:true }); }
 const SAID = { manual:'Took over. CUE will not cut.', assist:'Suggest mode on. Space takes a suggestion.', auto:'Handed control back to CUE.' };

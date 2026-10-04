@@ -1,4 +1,4 @@
-"""Desk UI adapter: serve hemadassani/cue-desk-ui and speak its contract on top of the one-shot.
+"""Desk UI adapter: serve hemadassani/cue-desk-ui and speak its contract on top of this director.
 
 Additive only. It registers two routes, `GET /desk` (the page) and `WS /ws` (the
 desk contract), and subscribes to the same state and frame fan-out the /ui page
@@ -20,7 +20,7 @@ in one rehearsal. Take over / H still holds for real.
 
 Honest limits: with a director whose snapshot carries `assist`, the desk's
 assist, accept and skip map straight through; against an older director without
-it, "assist" falls back to HOLD and the desk is told so. The one-shot measures no
+it, "assist" falls back to HOLD and the desk is told so. This director measures no
 Deepgram first-word latency, so the desk's latency row stays empty rather than
 showing a number that means something else. Pages track upstream
 hemadassani/cue-desk-ui 536eb19 (PRs #1-#5; #5 changed no page, it added the LAN HTTPS
@@ -50,7 +50,7 @@ MAX_QUEUED_TEXT = 200
 
 
 def camera_map(cameras: dict[str, dict], prev: dict[str, str] | None = None) -> dict[str, str]:
-    """One-shot camera id -> desk camera id. Every camera gets one. Per role, the desk's own tile
+    """Director camera id -> desk camera id. Every camera gets one. Per role, the desk's own tile
     (CAM-HOST / CAM-GUEST / CAM-WIDE) goes to a healthy camera over a merely connected one over an
     offline one, ties to the first listed; a camera that already holds that tile in `prev` keeps it
     while it is healthy, so two live guest phones do not swap tiles from tick to tick. Further
@@ -76,7 +76,7 @@ _TILE_ORDER = {"CAM-HOST": 0, "CAM-GUEST": 1, "CAM-WIDE": 2}
 
 
 def cameras_message(cmap: dict[str, str]) -> dict:
-    """The desk ids that exist right now, the desk's own three first. One-shot extension: the page
+    """The desk ids that exist right now, the desk's own three first. CUE extension: the page
     shows exactly these tiles, so a camera whose role changed or that was removed on /setup does not
     leave a ghost tile, and Host/Guest/Wide are hidden while no camera has that role."""
     return {"type": "cameras", "cameras": sorted(set(cmap.values()), key=lambda d: (_TILE_ORDER.get(d, 3), d))}
@@ -168,7 +168,7 @@ def decision_record(snapshot: dict, cmap: dict[str, str]) -> dict | None:
     evidence = str(d.get("evidence") or "")
     raw_cam = d.get("camera_id")
     desk_cam = cmap.get(raw_cam, raw_cam) if raw_cam else None
-    # Only an operator TAKE is "manual" to the desk. The one-shot also prefixes its held-slate
+    # Only an operator TAKE is "manual" to the desk. This director also prefixes its held-slate
     # reason with "manual", and the desk reads a leading "manual" as an operator take.
     manual = action == "TAKE" and reason.lower().startswith("manual")
     if not manual and reason.lower().startswith("manual"):
@@ -197,7 +197,7 @@ def decision_record(snapshot: dict, cmap: dict[str, str]) -> dict | None:
 
 
 def camera_states(snapshot: dict, cmap: dict[str, str]) -> dict[str, dict]:
-    """Desk camera id -> {ready, note} from the one-shot's camera health."""
+    """Desk camera id -> {ready, note} from the director's camera health."""
     out: dict[str, dict] = {}
     for cid, cam in (snapshot.get("cameras") or {}).items():
         desk = cmap.get(cid)
@@ -358,7 +358,7 @@ def diff_messages(prev: dict | None, cur: dict, cmap: dict[str, str]) -> list[di
 
 
 def rewrite_frame(payload: bytes, cmap: dict[str, str]) -> bytes | None:
-    """[u8 idlen][id][jpeg] with the one-shot id swapped for the desk id; None if unmapped."""
+    """[u8 idlen][id][jpeg] with the director's camera id swapped for the desk id; None if unmapped."""
     if not payload:
         return None
     n = payload[0]
