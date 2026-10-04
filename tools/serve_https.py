@@ -1,9 +1,10 @@
 """Serve server/static over HTTPS on the LAN, so the sign-up camera works on a phone.
 
-Copied from hemadassani/cue-desk-ui tools/serve_https.py (40fdd1a, PR #5); the only
-change is that --root defaults to this repo's server/static, where the desk, dashboard
-and sign-up pages live. The director on :8000 does not expose /static through the
-tunnel, so this is the way a guest's phone on the same Wi-Fi reaches signup.html.
+Copied from hemadassani/cue-desk-ui tools/serve_https.py (40fdd1a, PR #5, by Aditi
+Muduganti); the only change is that --root defaults to this repo's server/static, where
+the desk, dashboard and sign-up pages live. The director on :8000 does not expose
+/static through the tunnel, so this is the way a guest's phone on the same Wi-Fi
+reaches signup.html.
 
     python tools/serve_https.py                 # generates a cert, serves server/static on 8443
     python tools/serve_https.py --port 9000

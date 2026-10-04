@@ -1,3 +1,4 @@
+/* From https://github.com/hemadassani/cue-desk-ui (config.example.js), by Aditi Muduganti. */
 /* Copy this file to `config.js` and fill in `endpoint`.
    `config.js` is gitignored, because the /exec URL is a capability URL:
    anyone who has it can write to your sheet.
