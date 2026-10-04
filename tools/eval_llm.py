@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Evaluate the LLM interpreter on the team's corpora (M1 gate: accuracy + latency).
+"""Evaluate the LLM interpreter on the team's corpora (accuracy and latency).
 
   .venv/bin/python tools/eval_llm.py --models qwen2.5:3b llama3.2:3b            # local Ollama via CUE_LLM_BASE_URL
   .venv/bin/python tools/eval_llm.py --models gpt-4.1-mini --set heldout         # OpenAI when a key is present
+
+The corpora (scripts/data/) and the roster (apps/api/src/cue_api/semantics/roster.json) live in the
+team repo; clone it next to this one first:
+  git clone https://github.com/chocoHacks33/CUE.git ../hackmit_2026_cue
 
 Uses the same LLMParser + validate() as the live server. A case passes when the action is in the
 allowed set and, for SHOW, the target matches. Wrong cuts (a confident SHOW/WIDE/HOST where the
@@ -86,6 +90,9 @@ def main() -> int:
     a = ap.parse_args()
     global a_no_guard
     a_no_guard = a.no_guard
+    if not (REPO / "scripts" / "data").is_dir():
+        print(f"team repo not found at {REPO}: git clone https://github.com/chocoHacks33/CUE.git {REPO}")
+        return 1
     s = load_settings()
     if not s.has_llm:
         print("no LLM configured: set CUE_LLM_BASE_URL (+ CUE_LLM_MODEL) or OPENAI_API_KEY"); return 1
