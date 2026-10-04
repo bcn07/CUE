@@ -1,7 +1,7 @@
 """Live mic -> Deepgram streaming -> clause events.
 
 Master audio is captured once, here, on the director MacBook. Video cuts never
-touch it (CLAUDE.md hard rule 5). Deepgram WebSocket protocol per
+touch it: the programme audio stays one continuous take. Deepgram WebSocket protocol per
 https://developers.deepgram.com/reference/speech-to-text-api/listen-streaming
 
 Two Deepgram models, one client. `nova-3` (v1 /listen) sends interim and final

@@ -1,6 +1,6 @@
 """Deepgram streaming messages -> clause events. Pure: no network, no clocks.
 
-Design (CLAUDE.md "Clause and correction rule"): act on every finished clause
+Design rule (clauses and corrections): act on every finished clause
 for speed. Deepgram marks a finished clause with `is_final: true`; the whole
 utterance ends with `speech_final: true` or a separate `UtteranceEnd` message
 (or our own timeout). Every clause carries the utterance_id it belongs to, so

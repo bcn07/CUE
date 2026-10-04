@@ -5,7 +5,7 @@
                 ffmpeg is missing). Every tick writes the live camera's latest frame
                 (letterboxed to the recording size); SLATE ticks write a card.
 - audio.wav   : master mic PCM (16 kHz int16 mono) appended continuously. Video cuts
-                never touch this stream (CLAUDE.md hard rule 5).
+                never touch this stream: the programme audio stays one continuous take.
 - cuts.jsonl  : one line per program change (offset, camera, evidence, reason, cue, latency).
 - transcript.jsonl : clauses and utterance ends as they finalise.
 - summary.json: status, duration, frame/cut counts, final file names.
