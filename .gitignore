@@ -1,13 +1,33 @@
+# Python
+.venv
 .venv/
 camera/.venv/
 __pycache__/
-models/*.onnx
-data/
-.env
-dist/
+*.pyc
 .pytest_cache/
-reports/llm_eval_*.json
+dist/
+
+# Secrets: keys live in .env, never in the repo
+.env
+.env.*
+!.env.example
 server/static/config.js
-# self-signed dev certificates from tools/serve_https.py
+
+# Runtime data: people's photos, roster, recordings. Never commit.
+# (No trailing slash, so a symlinked data/ or models/ is ignored too.)
+/data
+data/
+recordings/
+
+# Face models are downloaded by run_server.sh
+/models
+models/
+
+# Self-signed dev certificates from tools/serve_https.py
 .certs/
 *.pem
+*.key
+*.crt
+
+# macOS
+.DS_Store
