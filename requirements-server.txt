@@ -1,15 +1,19 @@
-fastapi>=0.116
-uvicorn[standard]>=0.35
-websockets>=14
-opencv-python>=4.10
-numpy>=1.26
-openai>=1.50
-sounddevice>=0.4.6
-python-multipart>=0.0.9
-python-dotenv>=1.0
-pillow>=10
-httpx>=0.27
-livekit>=1.1
-livekit-api>=1.2
-pytest>=8
-pytest-asyncio>=0.23
+# Lower bounds: what the HackMIT build ran on. Upper bounds: below the next major
+# version, so a future release that has not been tested cannot break a fresh install.
+# Last full test (200 passed): fastapi 0.142, uvicorn 0.54, websockets 17.2,
+# opencv-python 5.0, numpy 2.5, openai 3.24, livekit 1.1 / livekit-api 1.2.
+fastapi>=0.116,<1
+uvicorn[standard]>=0.35,<1
+websockets>=14,<18
+opencv-python>=4.10,<6
+numpy>=1.26,<3
+openai>=1.50,<4
+sounddevice>=0.4.6,<1
+python-multipart>=0.0.9,<0.1
+python-dotenv>=1.0,<2
+pillow>=10,<13
+httpx>=0.27,<1
+livekit>=1.1,<2
+livekit-api>=1.2,<2
+pytest>=8,<10
+pytest-asyncio>=0.23,<2
