@@ -10,6 +10,11 @@ if [ ! -x .venv/bin/python ]; then
     uv pip install -q --python .venv/bin/python -r requirements-server.txt
   else
     PY="${PYTHON:-python3}"
+    # macOS's own /usr/bin/python3 is 3.9; the server needs 3.10+ (it would install everything, then fail at import).
+    if ! "$PY" -c 'import sys; sys.exit(sys.version_info < (3, 10))' 2>/dev/null; then
+      echo "[cue] Python 3.10+ is needed; $PY is $("$PY" --version 2>&1 || echo 'missing'). Install uv or python@3.12 (brew), or run: PYTHON=/path/to/python3.12 ./run_server.sh"
+      exit 1
+    fi
     "$PY" -m venv .venv
     .venv/bin/python -m pip install -q --upgrade pip
     .venv/bin/python -m pip install -q -r requirements-server.txt
