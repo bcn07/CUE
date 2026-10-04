@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # One command per camera laptop (macOS / Linux):
-#   ./camera/run_camera.sh --server ws://<director-ip>:8000 --cam B
+#   ./camera/run_camera.sh --server ws://<director-ip>:8000 --cam B --code <join-code>
 # Creates a local venv next to this script on first run, installs 2 packages, streams.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"

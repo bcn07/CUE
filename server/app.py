@@ -1183,7 +1183,7 @@ async def _startup() -> None:
     ip = lan_ip()
     log.info("Director UI:  http://%s:%d/   (also http://localhost:%d/)", ip, settings.port, settings.port)
     log.info("Setup page:   http://%s:%d/setup", ip, settings.port)
-    log.info("Cameras:      python camera/stream_camera.py --server ws://%s:%d --cam B", ip, settings.port)
+    log.info("Cameras:      ./camera/run_camera.sh --server ws://%s:%d --cam B --code %s", ip, settings.port, show.join_code)
 
 
 @app.on_event("shutdown")

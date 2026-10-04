@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """CUE camera laptop script: webcam -> JPEG frames -> ws://<director>:8000/ingest
 
-    python stream_camera.py --server ws://<director-ip>:8000 --cam B
+    python stream_camera.py --server ws://<director-ip>:8000 --cam B --code <join-code>
 
 Runs on macOS / Windows / Linux with Python 3.8+ and two packages:
     pip install opencv-python websockets

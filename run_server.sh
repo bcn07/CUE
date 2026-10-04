@@ -49,7 +49,9 @@ if [ -n "${CUE_LLM_BASE_URL:-$LLM_URL}" ] && echo "${CUE_LLM_BASE_URL:-$LLM_URL}
     ollama pull "${CUE_LLM_MODEL:-$LLM_MODEL}" || echo "[cue] model pull failed; the interpreter will run rules-only until it exists"
   fi
 fi
-IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo 127.0.0.1)"
+# LAN address for the camera line: the default route's interface first (not always en0/en1, e.g. USB Ethernet).
+DEF_IF="$(route -n get default 2>/dev/null | awk '/interface:/{print $2}' || true)"
+IP="$(ipconfig getifaddr "${DEF_IF:-en0}" 2>/dev/null || ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo 127.0.0.1)"
 # Port: shell env wins, then .env, then 8000. Exported so the app advertises the port it really binds.
 if [ -z "${CUE_PORT:-}" ] && [ -f .env ]; then
   CUE_PORT="$(sed -n 's/^CUE_PORT=//p' .env | tr -d '[:space:]"' | head -1)"
@@ -64,6 +66,6 @@ fi
 echo
 echo "  CUE director  : http://localhost:$PORT/        (this MacBook)"
 echo "  Setup page    : http://localhost:$PORT/setup"
-echo "  Camera laptops: ./camera/run_camera.sh --server ws://$IP:$PORT --cam B"
+echo "  Camera laptops: ./camera/run_camera.sh --server ws://$IP:$PORT --cam B --code <join code from /setup>"
 echo
 exec .venv/bin/python -m uvicorn server.app:app --host 0.0.0.0 --port "$PORT" --log-level info --ws-max-size 8388608 "$@"

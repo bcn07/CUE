@@ -1,6 +1,6 @@
 @echo off
 REM One command per camera laptop (Windows):
-REM   camera\run_camera.bat --server ws://DIRECTOR-IP:8000 --cam C
+REM   camera\run_camera.bat --server ws://DIRECTOR-IP:8000 --cam C --code JOIN-CODE
 setlocal
 set HERE=%~dp0
 set VPY=%HERE%.venv\Scripts\python.exe
