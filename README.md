@@ -5,8 +5,9 @@ about at that moment, and cuts between cameras on its own. When it is not sure,
 it holds the shot.
 
 **HackMIT 2026 (MIT, 19–20 September 2026): 2nd place in the Deepgram track**
-(Deepgram challenge "Build Something Worth Talking To"). This repository is the
-build the judges saw: the `livekit` branch at commit `fa1f474`.
+(Deepgram challenge "Build Something Worth Talking To"). The judges saw commit
+`fa1f474`; the commits after it add documentation, credits and repository
+clean-up only.
 
 ## What it does
 
